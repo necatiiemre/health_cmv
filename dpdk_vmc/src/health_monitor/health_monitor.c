@@ -36,34 +36,42 @@ typedef struct {
     uint64_t                     update_count;
 } hm_bm_slot_t;
 
-// Opaque paket bilgisi — henüz struct kesinleşmemiş türler için
-// (DTN ES / DTN SW / BM Flag). Sadece son gelen paketin wire boyutu,
-// msg_id ve timestamp bilgisini tutar; içerik hex olarak printer thread'de
-// özetlenir. Struct netleştikçe tam parse'a geçilecek.
 typedef struct {
-    pthread_mutex_t lock;
-    bool            updated;
-    uint64_t        update_count;
-    uint16_t        last_len;
-    uint64_t        last_timestamp;
-    uint8_t         buf[1200];   // max gözlenen ~1132 B; emniyetli tavan
-} hm_opaque_slot_t;
+    bm_flag_cbit_report_t data;
+    pthread_mutex_t       lock;
+    bool                  updated;
+    uint64_t              update_count;
+} hm_bm_flag_slot_t;
+
+typedef struct {
+    dtn_es_cbit_report_t data;
+    pthread_mutex_t      lock;
+    bool                 updated;
+    uint64_t             update_count;
+} hm_dtn_es_slot_t;
+
+typedef struct {
+    dtn_sw_cbit_report_t data;
+    pthread_mutex_t      lock;
+    bool                 updated;
+    uint64_t             update_count;
+} hm_dtn_sw_slot_t;
 
 // VS tarafı — CPU USAGE + PBIT + 4 CBIT türü
-static hm_pcs_slot_t    vs_cpu_usage_slot     = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_pbit_slot_t   vs_pbit_slot          = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_bm_slot_t     vs_bm_engineering_slot = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_opaque_slot_t vs_bm_flag_slot       = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_opaque_slot_t vs_dtn_es_slot        = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_opaque_slot_t vs_dtn_sw_slot        = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_pcs_slot_t      vs_cpu_usage_slot      = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_pbit_slot_t     vs_pbit_slot           = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_bm_slot_t       vs_bm_engineering_slot = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_bm_flag_slot_t  vs_bm_flag_slot        = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_dtn_es_slot_t   vs_dtn_es_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_dtn_sw_slot_t   vs_dtn_sw_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
 
 // FLCS tarafı — ayna
-static hm_pcs_slot_t    flcs_cpu_usage_slot      = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_pbit_slot_t   flcs_pbit_slot           = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_bm_slot_t     flcs_bm_engineering_slot = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_opaque_slot_t flcs_bm_flag_slot        = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_opaque_slot_t flcs_dtn_es_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_opaque_slot_t flcs_dtn_sw_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_pcs_slot_t      flcs_cpu_usage_slot      = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_pbit_slot_t     flcs_pbit_slot           = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_bm_slot_t       flcs_bm_engineering_slot = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_bm_flag_slot_t  flcs_bm_flag_slot        = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_dtn_es_slot_t   flcs_dtn_es_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_dtn_sw_slot_t   flcs_dtn_sw_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
 
 // Printer thread durumu
 static pthread_t        g_printer_thread;
@@ -158,28 +166,128 @@ static void parse_bm_engineering(bm_engineering_cbit_report_t *dst, const uint8_
     (void)bswap_float_array; // helper leri ilerideki yeni parse'larda kullanacağız
 }
 
-// Tam parse edilmeyen türler için: son paketin wire kopyası + timestamp tutulur.
-// printer thread bu slot'u özetle basar.
-static void store_opaque(hm_opaque_slot_t *slot,
-                         const uint8_t *payload, uint16_t len)
+// BM FLAG (105 B) parse — header + lru + 93 B opaque payload.
+static void parse_bm_flag(bm_flag_cbit_report_t *dst, const uint8_t *payload)
 {
-    uint16_t copy_len = len;
-    if (copy_len > sizeof(slot->buf)) copy_len = sizeof(slot->buf);
+    memcpy(dst, payload, sizeof(*dst));
+    swap_vmp_header(&dst->header_st);
+}
 
-    uint64_t ts = 0;
-    if (len >= sizeof(vmp_cmsw_header_t)) {
-        vmp_cmsw_header_t hdr;
-        memcpy(&hdr, payload, sizeof(hdr));
-        ts = be64_to_host(hdr.timestamp);
+// DTN ES parse — wire 352 B (HW_VCC_INT çıkarıldı).
+// A664_ES_FW_VER alanı bitfield (40-bit reserved + 3 u8), swap gerekmez.
+// Kalan uint16/uint32/uint64 alanları BE→host çevrilir.
+static void parse_dtn_es(dtn_es_cbit_report_t *dst, const uint8_t *payload)
+{
+    memcpy(dst, payload, sizeof(*dst));
+    swap_vmp_header(&dst->header_st);
+
+    dtn_es_monitoring_t *m = &dst->dtn_es_monitoring_st;
+
+    // A664_ES_FW_VER: bitfield (40 reserved + major/minor/bugfix) — swap yok
+
+    // uint64 ve uint32 alanları tek tek swap
+    m->A664_ES_DEV_ID        = be64_to_host(m->A664_ES_DEV_ID);
+    m->A664_ES_MODE          = be64_to_host(m->A664_ES_MODE);
+    m->A664_ES_CONFIG_ID     = be64_to_host(m->A664_ES_CONFIG_ID);
+    m->A664_ES_BIT_STATUS    = be64_to_host(m->A664_ES_BIT_STATUS);
+    m->A664_ES_CONFIG_STATUS = be64_to_host(m->A664_ES_CONFIG_STATUS);
+
+    m->A664_PTP_CONFIG_ID  = be16_to_host(m->A664_PTP_CONFIG_ID);
+    m->A664_PTP_SYNC_VL_ID = be16_to_host(m->A664_PTP_SYNC_VL_ID);
+    m->A664_PTP_REQ_VL_ID  = be16_to_host(m->A664_PTP_REQ_VL_ID);
+    m->A664_PTP_RES_VL_ID  = be16_to_host(m->A664_PTP_RES_VL_ID);
+
+    m->A664_ES_HW_TEMP                            = be32_to_host(m->A664_ES_HW_TEMP);
+    m->A664_ES_TRANSCEIVER_TEMP                   = be64_to_host(m->A664_ES_TRANSCEIVER_TEMP);
+    m->A664_ES_PORT_A_STATUS                      = be64_to_host(m->A664_ES_PORT_A_STATUS);
+    m->A664_ES_PORT_B_STATUS                      = be64_to_host(m->A664_ES_PORT_B_STATUS);
+    m->A664_ES_TX_INCOMING_COUNT                  = be64_to_host(m->A664_ES_TX_INCOMING_COUNT);
+    m->A664_ES_TX_A_OUTGOING_COUNT                = be64_to_host(m->A664_ES_TX_A_OUTGOING_COUNT);
+    m->A664_ES_TX_B_OUTGOING_COUNT                = be64_to_host(m->A664_ES_TX_B_OUTGOING_COUNT);
+    m->A664_ES_TX_VLID_DROP_COUNT                 = be64_to_host(m->A664_ES_TX_VLID_DROP_COUNT);
+    m->A664_ES_TX_LMIN_LMAX_DROP_COUNT            = be64_to_host(m->A664_ES_TX_LMIN_LMAX_DROP_COUNT);
+    m->A664_ES_TX_MAX_JITTER_DROP_COUNT           = be64_to_host(m->A664_ES_TX_MAX_JITTER_DROP_COUNT);
+    m->A664_ES_RX_A_INCOMING_COUNT                = be64_to_host(m->A664_ES_RX_A_INCOMING_COUNT);
+    m->A664_ES_RX_B_INCOMING_COUNT                = be64_to_host(m->A664_ES_RX_B_INCOMING_COUNT);
+    m->A664_ES_RX_OUTGOING_COUNT                  = be64_to_host(m->A664_ES_RX_OUTGOING_COUNT);
+    m->A664_ES_RX_A_VLID_DROP_COUNT               = be64_to_host(m->A664_ES_RX_A_VLID_DROP_COUNT);
+    m->A664_ES_RX_A_LMIN_LMAX_DROP_COUNT          = be64_to_host(m->A664_ES_RX_A_LMIN_LMAX_DROP_COUNT);
+    m->A664_ES_RX_A_NET_ERR_COUNT                 = be64_to_host(m->A664_ES_RX_A_NET_ERR_COUNT);
+    m->A664_ES_RX_A_SEQ_ERR_COUNT                 = be64_to_host(m->A664_ES_RX_A_SEQ_ERR_COUNT);
+    m->A664_ES_RX_A_CRC_ERROR_COUNT               = be64_to_host(m->A664_ES_RX_A_CRC_ERROR_COUNT);
+    m->A664_ES_RX_A_IP_CHECKSUM_ERROR_COUNT       = be64_to_host(m->A664_ES_RX_A_IP_CHECKSUM_ERROR_COUNT);
+    m->A664_ES_RX_B_VLID_DROP_COUNT               = be64_to_host(m->A664_ES_RX_B_VLID_DROP_COUNT);
+    m->A664_ES_RX_B_LMIN_LMAX_DROP_COUNT          = be64_to_host(m->A664_ES_RX_B_LMIN_LMAX_DROP_COUNT);
+    m->A664_ES_RX_B_SEQ_ERR_COUNT                 = be64_to_host(m->A664_ES_RX_B_SEQ_ERR_COUNT);
+    m->A664_ES_RX_B_NET_ERR_COUNT                 = be64_to_host(m->A664_ES_RX_B_NET_ERR_COUNT);
+    m->A664_ES_RX_B_CRC_ERROR_COUNT               = be64_to_host(m->A664_ES_RX_B_CRC_ERROR_COUNT);
+    m->A664_ES_RX_B_IP_CHECKSUM_ERROR_COUNT       = be64_to_host(m->A664_ES_RX_B_IP_CHECKSUM_ERROR_COUNT);
+    m->A664_BSP_TX_PACKET_COUNT                   = be64_to_host(m->A664_BSP_TX_PACKET_COUNT);
+    m->A664_BSP_TX_BYTE_COUNT                     = be64_to_host(m->A664_BSP_TX_BYTE_COUNT);
+    m->A664_BSP_TX_ERROR_COUNT                    = be64_to_host(m->A664_BSP_TX_ERROR_COUNT);
+    m->A664_BSP_RX_PACKET_COUNT                   = be64_to_host(m->A664_BSP_RX_PACKET_COUNT);
+    m->A664_BSP_RX_BYTE_COUNT                     = be64_to_host(m->A664_BSP_RX_BYTE_COUNT);
+    m->A664_BSP_RX_ERROR_COUNT                    = be64_to_host(m->A664_BSP_RX_ERROR_COUNT);
+    m->A664_BSP_RX_MISSED_FRAME_COUNT             = be64_to_host(m->A664_BSP_RX_MISSED_FRAME_COUNT);
+    m->A664_BSP_VER                               = be64_to_host(m->A664_BSP_VER);
+    m->A664_ES_VENDOR_TYPE                        = be64_to_host(m->A664_ES_VENDOR_TYPE);
+    m->A664_ES_BSP_QUEUING_RX_VL_PORT_DROP_COUNT  = be64_to_host(m->A664_ES_BSP_QUEUING_RX_VL_PORT_DROP_COUNT);
+}
+
+// DTN SW parse — wire 1064 B (57 B status + 8×124 B port).
+static void parse_dtn_sw(dtn_sw_cbit_report_t *dst, const uint8_t *payload)
+{
+    memcpy(dst, payload, sizeof(*dst));
+    swap_vmp_header(&dst->header_st);
+
+    // Status
+    dtn_sw_status_mon_t *s = &dst->dtn_sw_monitoring_st.status;
+    s->A664_SW_TX_TOTAL_COUNT      = be64_to_host(s->A664_SW_TX_TOTAL_COUNT);
+    s->A664_SW_RX_TOTAL_COUNT      = be64_to_host(s->A664_SW_RX_TOTAL_COUNT);
+    // float BE → host (uint32 swap + reinterpret)
+    {
+        uint32_t v;
+        memcpy(&v, &s->A664_SW_TRANSCEIVER_TEMP, 4);
+        v = __builtin_bswap32(v);
+        memcpy(&s->A664_SW_TRANSCEIVER_TEMP, &v, 4);
+
+        memcpy(&v, &s->A664_SW_SHARED_TRANSCEIVER_TEMP, 4);
+        v = __builtin_bswap32(v);
+        memcpy(&s->A664_SW_SHARED_TRANSCEIVER_TEMP, &v, 4);
+
+        memcpy(&v, &s->A664_SW_VOLTAGE, 4);
+        v = __builtin_bswap32(v);
+        memcpy(&s->A664_SW_VOLTAGE, &v, 4);
+
+        memcpy(&v, &s->A664_SW_TEMPERATURE, 4);
+        v = __builtin_bswap32(v);
+        memcpy(&s->A664_SW_TEMPERATURE, &v, 4);
     }
+    s->A664_SW_DEV_ID              = be16_to_host(s->A664_SW_DEV_ID);
+    s->A664_SW_FW_VER              = be64_to_host(s->A664_SW_FW_VER);
+    s->A664_SW_EMBEDEED_ES_FW_VER  = be64_to_host(s->A664_SW_EMBEDEED_ES_FW_VER);
+    s->A664_SW_CONFIGURATION_ID    = be16_to_host(s->A664_SW_CONFIGURATION_ID);
 
-    pthread_mutex_lock(&slot->lock);
-    memcpy(slot->buf, payload, copy_len);
-    slot->last_len       = len;
-    slot->last_timestamp = ts;
-    slot->updated        = true;
-    slot->update_count++;
-    pthread_mutex_unlock(&slot->lock);
+    // Ports
+    for (int i = 0; i < 8; i++) {
+        dtn_sw_port_mon_t *p = &dst->dtn_sw_monitoring_st.port[i];
+        p->A664_SW_PORT_ID = be16_to_host(p->A664_SW_PORT_ID);
+        p->A664_SW_PORT_i_CRC_ERR_COUNT              = be64_to_host(p->A664_SW_PORT_i_CRC_ERR_COUNT);
+        p->A664_SW_PORT_i_MIN_VL_FRAME_ERR_COUNT     = be64_to_host(p->A664_SW_PORT_i_MIN_VL_FRAME_ERR_COUNT);
+        p->A664_SW_PORT_i_MAX_VL_FRAME_ERR_COUNT     = be64_to_host(p->A664_SW_PORT_i_MAX_VL_FRAME_ERR_COUNT);
+        p->A664_SW_PORT_i_TRAFFIC_POLCY_DROP_COUNT   = be64_to_host(p->A664_SW_PORT_i_TRAFFIC_POLCY_DROP_COUNT);
+        p->A664_SW_PORT_i_BE_COUNT                   = be64_to_host(p->A664_SW_PORT_i_BE_COUNT);
+        p->A664_SW_PORT_i_TX_COUNT                   = be64_to_host(p->A664_SW_PORT_i_TX_COUNT);
+        p->A664_SW_PORT_i_RX_COUNT                   = be64_to_host(p->A664_SW_PORT_i_RX_COUNT);
+        p->A664_SW_PORT_i_VL_SOURCE_ERR_COUNT        = be64_to_host(p->A664_SW_PORT_i_VL_SOURCE_ERR_COUNT);
+        p->A664_SW_PORT_i_MAX_DELAY_ERR_COUNT        = be64_to_host(p->A664_SW_PORT_i_MAX_DELAY_ERR_COUNT);
+        p->A664_SW_PORT_i_VLID_DROP_COUNT            = be64_to_host(p->A664_SW_PORT_i_VLID_DROP_COUNT);
+        p->A664_SW_PORT_i_UNDEF_MAC_COUNT            = be64_to_host(p->A664_SW_PORT_i_UNDEF_MAC_COUNT);
+        p->A664_SW_PORT_i_HIGH_PRTY_QUE_OVRFLW_COUNT = be64_to_host(p->A664_SW_PORT_i_HIGH_PRTY_QUE_OVRFLW_COUNT);
+        p->A664_SW_PORT_i_LOW_PRTY_QUE_OVRFLW_COUNT  = be64_to_host(p->A664_SW_PORT_i_LOW_PRTY_QUE_OVRFLW_COUNT);
+        p->A664_SW_PORT_i_MAX_DELAY                  = be64_to_host(p->A664_SW_PORT_i_MAX_DELAY);
+        p->A664_SW_PORT_i_SPEED                      = be64_to_host(p->A664_SW_PORT_i_SPEED);
+    }
 }
 
 // ============================================================================
@@ -250,19 +358,49 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
                 }
 
                 case HM_CBIT_MSG_ID_BM_FLAG:
-                    store_opaque(is_vs ? &vs_bm_flag_slot : &flcs_bm_flag_slot,
-                                 payload, len);
+                {
+                    if (len < sizeof(bm_flag_cbit_report_t)) {
+                        __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                        break;
+                    }
+                    hm_bm_flag_slot_t *slot = is_vs ? &vs_bm_flag_slot : &flcs_bm_flag_slot;
+                    pthread_mutex_lock(&slot->lock);
+                    parse_bm_flag(&slot->data, payload);
+                    slot->updated = true;
+                    slot->update_count++;
+                    pthread_mutex_unlock(&slot->lock);
                     break;
+                }
 
                 case HM_CBIT_MSG_ID_DTN_ES:
-                    store_opaque(is_vs ? &vs_dtn_es_slot : &flcs_dtn_es_slot,
-                                 payload, len);
+                {
+                    if (len < sizeof(dtn_es_cbit_report_t)) {
+                        __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                        break;
+                    }
+                    hm_dtn_es_slot_t *slot = is_vs ? &vs_dtn_es_slot : &flcs_dtn_es_slot;
+                    pthread_mutex_lock(&slot->lock);
+                    parse_dtn_es(&slot->data, payload);
+                    slot->updated = true;
+                    slot->update_count++;
+                    pthread_mutex_unlock(&slot->lock);
                     break;
+                }
 
                 case HM_CBIT_MSG_ID_DTN_SW:
-                    store_opaque(is_vs ? &vs_dtn_sw_slot : &flcs_dtn_sw_slot,
-                                 payload, len);
+                {
+                    if (len < sizeof(dtn_sw_cbit_report_t)) {
+                        __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                        break;
+                    }
+                    hm_dtn_sw_slot_t *slot = is_vs ? &vs_dtn_sw_slot : &flcs_dtn_sw_slot;
+                    pthread_mutex_lock(&slot->lock);
+                    parse_dtn_sw(&slot->data, payload);
+                    slot->updated = true;
+                    slot->update_count++;
+                    pthread_mutex_unlock(&slot->lock);
                     break;
+                }
 
                 default:
                     __atomic_add_fetch(&g_hm_rx_unknown_msg, 1, __ATOMIC_RELAXED);
@@ -319,39 +457,36 @@ static bool drain_and_print_bm_eng_slot(hm_bm_slot_t *slot, const char *device_n
     return printed;
 }
 
-// Opaque slot özet basımı: wire boyutu, timestamp, update sayısı ve ilk
-// 32 byte hex dump. Struct netleşince tam parse'a dönüştürülecek.
-static bool drain_and_summarize_opaque(hm_opaque_slot_t *slot,
-                                       const char *device_name,
-                                       const char *kind)
+static bool drain_and_print_bm_flag_slot(hm_bm_flag_slot_t *slot, const char *device_name)
 {
     bool printed = false;
-    uint8_t  buf[64];
-    uint16_t len    = 0;
-    uint64_t ts     = 0;
-    uint64_t count  = 0;
-
+    bm_flag_cbit_report_t local;
     pthread_mutex_lock(&slot->lock);
-    if (slot->updated) {
-        len   = slot->last_len;
-        ts    = slot->last_timestamp;
-        count = slot->update_count;
-        uint16_t copy = len > sizeof(buf) ? sizeof(buf) : len;
-        memcpy(buf, slot->buf, copy);
-        slot->updated = false;
-        printed = true;
-    }
+    if (slot->updated) { local = slot->data; slot->updated = false; printed = true; }
     pthread_mutex_unlock(&slot->lock);
+    if (printed) print_bm_flag_cbit_report(&local, device_name);
+    return printed;
+}
 
-    if (printed) {
-        printf("\n[%s][%s CBIT] size=%u B  ts=%lu  update#=%lu\n",
-               device_name, kind, len, (unsigned long)ts, (unsigned long)count);
-        printf("  first bytes:");
-        uint16_t shown = len > 32 ? 32 : len;
-        for (uint16_t i = 0; i < shown; i++) printf(" %02x", buf[i]);
-        if (len > shown) printf(" ...");
-        printf("\n");
-    }
+static bool drain_and_print_dtn_es_slot(hm_dtn_es_slot_t *slot, const char *device_name)
+{
+    bool printed = false;
+    dtn_es_cbit_report_t local;
+    pthread_mutex_lock(&slot->lock);
+    if (slot->updated) { local = slot->data; slot->updated = false; printed = true; }
+    pthread_mutex_unlock(&slot->lock);
+    if (printed) print_dtn_es_cbit_report(&local, device_name);
+    return printed;
+}
+
+static bool drain_and_print_dtn_sw_slot(hm_dtn_sw_slot_t *slot, const char *device_name)
+{
+    bool printed = false;
+    dtn_sw_cbit_report_t local;
+    pthread_mutex_lock(&slot->lock);
+    if (slot->updated) { local = slot->data; slot->updated = false; printed = true; }
+    pthread_mutex_unlock(&slot->lock);
+    if (printed) print_dtn_sw_cbit_report(&local, device_name);
     return printed;
 }
 
@@ -368,12 +503,14 @@ static void *hm_printer_thread_function(void *arg)
         any |= drain_and_print_bm_eng_slot(&vs_bm_engineering_slot,   "VS");
         any |= drain_and_print_bm_eng_slot(&flcs_bm_engineering_slot, "FLCS");
 
-        any |= drain_and_summarize_opaque(&vs_bm_flag_slot,   "VS",   "BM_FLAG");
-        any |= drain_and_summarize_opaque(&flcs_bm_flag_slot, "FLCS", "BM_FLAG");
-        any |= drain_and_summarize_opaque(&vs_dtn_es_slot,    "VS",   "DTN_ES");
-        any |= drain_and_summarize_opaque(&flcs_dtn_es_slot,  "FLCS", "DTN_ES");
-        any |= drain_and_summarize_opaque(&vs_dtn_sw_slot,    "VS",   "DTN_SW");
-        any |= drain_and_summarize_opaque(&flcs_dtn_sw_slot,  "FLCS", "DTN_SW");
+        any |= drain_and_print_bm_flag_slot(&vs_bm_flag_slot,   "VS");
+        any |= drain_and_print_bm_flag_slot(&flcs_bm_flag_slot, "FLCS");
+
+        any |= drain_and_print_dtn_es_slot(&vs_dtn_es_slot,   "VS");
+        any |= drain_and_print_dtn_es_slot(&flcs_dtn_es_slot, "FLCS");
+
+        any |= drain_and_print_dtn_sw_slot(&vs_dtn_sw_slot,   "VS");
+        any |= drain_and_print_dtn_sw_slot(&flcs_dtn_sw_slot, "FLCS");
 
         // Her saniye tanılama satırı bas (printer thread canlı mı + paket geliyor mu göster).
         // Böylece "hiç çıktı görmüyorum" durumunda bile thread'in çalıştığı net olur.
@@ -513,6 +650,27 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
     printf("========================================================================================\n");
 }
 
+// 2b. BM FLAG — 105 B, gövdesi VMC tarafında netleşene kadar hex dump.
+void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *device_name)
+{
+    if (!data) return;
+    const char *prefix = device_name ? device_name : "UNKNOWN";
+    printf("\n========================================================================================\n");
+    printf("                           [%s] BM FLAG CBIT REPORT                                     \n", prefix);
+    printf("========================================================================================\n");
+    printf(" msg_id=%u  msg_len=%u  ts=%lu  lru_id=%u\n",
+           data->header_st.message_identifier,
+           data->header_st.message_len,
+           (unsigned long)data->header_st.timestamp,
+           data->lru_id);
+    printf(" payload (93 B):");
+    for (size_t i = 0; i < sizeof(data->payload); i++) {
+        if (i % 16 == 0) printf("\n  %3zu:", i);
+        printf(" %02x", data->payload[i]);
+    }
+    printf("\n========================================================================================\n");
+}
+
 // 3. DTN ES CBIT
 void print_dtn_es_cbit_report(const dtn_es_cbit_report_t *data, const char *device_name)
 {
@@ -564,8 +722,13 @@ void print_dtn_sw_cbit_report(const dtn_sw_cbit_report_t *data, const char *devi
     printf("\n[ SWITCH STATUS ]\n");
     printf(" Device ID    : 0x%04X              | FW Version   : 0x%016lX\n", sw->A664_SW_DEV_ID, sw->A664_SW_FW_VER);
     printf(" TX Total Cnt : %-18lu | RX Total Cnt : %lu\n", sw->A664_SW_TX_TOTAL_COUNT, sw->A664_SW_RX_TOTAL_COUNT);
-    printf(" Transc Temp  : %-18lu | Voltage      : %u\n", sw->A664_SW_TRANSCEIVER_TEMP, sw->A664_SW_VOLTAGE);
+    printf(" Transc Temp  : %-8.3f        | Shared Temp  : %.3f\n",
+           sw->A664_SW_TRANSCEIVER_TEMP, sw->A664_SW_SHARED_TRANSCEIVER_TEMP);
+    printf(" Voltage      : %-8.3f        | Temperature  : %.3f\n",
+           sw->A664_SW_VOLTAGE, sw->A664_SW_TEMPERATURE);
     printf(" Port Count   : %-18u | Mode         : %u\n", sw->A664_SW_PORT_COUNT, sw->A664_SW_MODE);
+    printf(" Config ID    : 0x%04X              | Embedded FW  : 0x%016lX\n",
+           sw->A664_SW_CONFIGURATION_ID, sw->A664_SW_EMBEDEED_ES_FW_VER);
 
     printf("\n[ PORT STATUS OVERVIEW ]\n");
     printf(" %-4s | %-6s | %-8s | %-12s | %-12s | %-12s | %-12s\n",

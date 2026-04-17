@@ -60,6 +60,7 @@ void hm_stop_printer_thread(void);
 // ============================================================================
 void print_vmc_pbit_report     (const vmc_pbit_data_t *data,           const char *device_name);
 void print_bm_cbit_report      (const bm_engineering_cbit_report_t *data, const char *report_title, const char *device_name);
+void print_bm_flag_cbit_report (const bm_flag_cbit_report_t *data,     const char *device_name);
 void print_dtn_es_cbit_report  (const dtn_es_cbit_report_t *data,      const char *device_name);
 void print_dtn_sw_cbit_report  (const dtn_sw_cbit_report_t *data,      const char *device_name);
 void print_pcs_profile_stats   (const Pcs_profile_stats *data,         const char *device_name);
