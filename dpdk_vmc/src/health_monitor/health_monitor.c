@@ -86,6 +86,25 @@ static volatile uint64_t g_hm_rx_cbit         = 0;  // VL-ID 11/14 toplam
 static volatile uint64_t g_hm_rx_unknown_vlid = 0;
 static volatile uint64_t g_hm_rx_unknown_msg  = 0;  // CBIT içinde bilinmeyen msg_id
 static volatile uint64_t g_hm_rx_short        = 0;
+static volatile uint64_t g_hm_rx_empty        = 0;  // boş CBIT paketleri (tx/rx total = 0)
+
+// CBIT paketlerinde "boşluk" kontrolü — traffic counter'ları tamamen sıfırsa
+// paket VMC tarafının henüz veri toplamadığı bir döngüde gönderildiğini
+// gösterir. Bu paketlerle slot'u güncellemiyoruz; dolu paketleri
+// ezmemeleri için updated bayrağı set edilmez.
+static inline bool dtn_sw_is_empty(const dtn_sw_cbit_report_t *d)
+{
+    const dtn_sw_status_mon_t *s = &d->dtn_sw_monitoring_st.status;
+    return (s->A664_SW_TX_TOTAL_COUNT == 0 && s->A664_SW_RX_TOTAL_COUNT == 0);
+}
+
+static inline bool dtn_es_is_empty(const dtn_es_cbit_report_t *d)
+{
+    const dtn_es_monitoring_t *m = &d->dtn_es_monitoring_st;
+    return (m->A664_ES_TX_INCOMING_COUNT   == 0 &&
+            m->A664_ES_RX_A_INCOMING_COUNT == 0 &&
+            m->A664_ES_RX_B_INCOMING_COUNT == 0);
+}
 
 // ============================================================================
 // BE→host endian yardımcıları
@@ -378,9 +397,16 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
                         __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
                         break;
                     }
+                    // Geçici tampona parse et; boşsa slot'u değiştirme.
+                    dtn_es_cbit_report_t tmp;
+                    parse_dtn_es(&tmp, payload);
+                    if (dtn_es_is_empty(&tmp)) {
+                        __atomic_add_fetch(&g_hm_rx_empty, 1, __ATOMIC_RELAXED);
+                        break;
+                    }
                     hm_dtn_es_slot_t *slot = is_vs ? &vs_dtn_es_slot : &flcs_dtn_es_slot;
                     pthread_mutex_lock(&slot->lock);
-                    parse_dtn_es(&slot->data, payload);
+                    slot->data = tmp;
                     slot->updated = true;
                     slot->update_count++;
                     pthread_mutex_unlock(&slot->lock);
@@ -393,9 +419,15 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
                         __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
                         break;
                     }
+                    dtn_sw_cbit_report_t tmp;
+                    parse_dtn_sw(&tmp, payload);
+                    if (dtn_sw_is_empty(&tmp)) {
+                        __atomic_add_fetch(&g_hm_rx_empty, 1, __ATOMIC_RELAXED);
+                        break;
+                    }
                     hm_dtn_sw_slot_t *slot = is_vs ? &vs_dtn_sw_slot : &flcs_dtn_sw_slot;
                     pthread_mutex_lock(&slot->lock);
-                    parse_dtn_sw(&slot->data, payload);
+                    slot->data = tmp;
                     slot->updated = true;
                     slot->update_count++;
                     pthread_mutex_unlock(&slot->lock);
@@ -521,12 +553,14 @@ static void *hm_printer_thread_function(void *arg)
         uint64_t unknown_vlid = __atomic_load_n(&g_hm_rx_unknown_vlid, __ATOMIC_RELAXED);
         uint64_t unknown_msg  = __atomic_load_n(&g_hm_rx_unknown_msg,  __ATOMIC_RELAXED);
         uint64_t short_cnt    = __atomic_load_n(&g_hm_rx_short,        __ATOMIC_RELAXED);
-        printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu cbit=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
+        uint64_t empty_cnt    = __atomic_load_n(&g_hm_rx_empty,        __ATOMIC_RELAXED);
+        printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu cbit=%lu empty=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
                (unsigned long)tick,
                (unsigned long)total,
                (unsigned long)vs_cnt,
                (unsigned long)flcs_cnt,
                (unsigned long)cbit_cnt,
+               (unsigned long)empty_cnt,
                (unsigned long)unknown_vlid,
                (unsigned long)unknown_msg,
                (unsigned long)short_cnt,
