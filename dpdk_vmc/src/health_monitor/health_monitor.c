@@ -51,6 +51,13 @@ static pthread_t        g_printer_thread;
 static volatile bool   *g_stop_flag = NULL;
 static volatile bool    g_printer_running = false;
 
+// Debug/diagnostic sayaçları (atomic artırılır, lock gerekmez)
+static volatile uint64_t g_hm_rx_total        = 0;  // hm_handle_packet çağrı sayısı
+static volatile uint64_t g_hm_rx_vs_cpu       = 0;
+static volatile uint64_t g_hm_rx_flcs_cpu     = 0;
+static volatile uint64_t g_hm_rx_unknown_vlid = 0;
+static volatile uint64_t g_hm_rx_short        = 0;
+
 // ============================================================================
 // BE→host endian yardımcıları
 // ============================================================================
@@ -99,29 +106,39 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
 {
     if (payload == NULL) return;
 
+    __atomic_add_fetch(&g_hm_rx_total, 1, __ATOMIC_RELAXED);
+
     switch (vl_id)
     {
         case HEALTH_MONITOR_VS_CPU_USAGE_VLID:
-            if (len < sizeof(Pcs_profile_stats)) return;
+            if (len < sizeof(Pcs_profile_stats)) {
+                __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
             pthread_mutex_lock(&vs_cpu_usage_slot.lock);
             parse_pcs_profile_stats(&vs_cpu_usage_slot.data, payload);
             vs_cpu_usage_slot.updated = true;
             vs_cpu_usage_slot.update_count++;
             pthread_mutex_unlock(&vs_cpu_usage_slot.lock);
+            __atomic_add_fetch(&g_hm_rx_vs_cpu, 1, __ATOMIC_RELAXED);
             break;
 
         case HEALTH_MONITOR_FLCS_CPU_USAGE_VLID:
-            // Handler ileride eklenecek; şimdilik sadece sayaç artır.
-            if (len < sizeof(Pcs_profile_stats)) return;
+            if (len < sizeof(Pcs_profile_stats)) {
+                __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
             pthread_mutex_lock(&flcs_cpu_usage_slot.lock);
             parse_pcs_profile_stats(&flcs_cpu_usage_slot.data, payload);
             flcs_cpu_usage_slot.updated = true;
             flcs_cpu_usage_slot.update_count++;
             pthread_mutex_unlock(&flcs_cpu_usage_slot.lock);
+            __atomic_add_fetch(&g_hm_rx_flcs_cpu, 1, __ATOMIC_RELAXED);
             break;
 
         // TODO: diğer HM VLID'leri (PBIT_RESPONSE, CBIT) aynı desene göre eklenecek
         default:
+            __atomic_add_fetch(&g_hm_rx_unknown_vlid, 1, __ATOMIC_RELAXED);
             break;
     }
 }
@@ -151,6 +168,7 @@ static bool drain_and_print_pcs_slot(hm_pcs_slot_t *slot, const char *device_nam
 static void *hm_printer_thread_function(void *arg)
 {
     (void)arg;
+    uint64_t tick = 0;
     while (g_stop_flag == NULL || !(*g_stop_flag))
     {
         bool any = false;
@@ -158,7 +176,24 @@ static void *hm_printer_thread_function(void *arg)
         any |= drain_and_print_pcs_slot(&flcs_cpu_usage_slot, "FLCS");
         // Diğer slot drain'leri (PBIT, CBIT) buraya eklenecek.
 
-        (void)any;
+        // Her saniye tanılama satırı bas (printer thread canlı mı + paket geliyor mu göster).
+        // Böylece "hiç çıktı görmüyorum" durumunda bile thread'in çalıştığı net olur.
+        uint64_t total       = __atomic_load_n(&g_hm_rx_total,        __ATOMIC_RELAXED);
+        uint64_t vs_cnt      = __atomic_load_n(&g_hm_rx_vs_cpu,       __ATOMIC_RELAXED);
+        uint64_t flcs_cnt    = __atomic_load_n(&g_hm_rx_flcs_cpu,     __ATOMIC_RELAXED);
+        uint64_t unknown_cnt = __atomic_load_n(&g_hm_rx_unknown_vlid, __ATOMIC_RELAXED);
+        uint64_t short_cnt   = __atomic_load_n(&g_hm_rx_short,        __ATOMIC_RELAXED);
+        printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu unknown=%lu short=%lu printed_this_tick=%d\n",
+               (unsigned long)tick,
+               (unsigned long)total,
+               (unsigned long)vs_cnt,
+               (unsigned long)flcs_cnt,
+               (unsigned long)unknown_cnt,
+               (unsigned long)short_cnt,
+               any ? 1 : 0);
+        fflush(stdout);
+        tick++;
+
         usleep(HEALTH_MONITOR_DASHBOARD_INTERVAL_MS * 1000u);
     }
     return NULL;
