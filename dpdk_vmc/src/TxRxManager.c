@@ -1482,6 +1482,29 @@ int rx_worker(void *arg)
                 struct rte_mbuf *m = pkts[i];
                 uint8_t *pkt = rte_pktmbuf_mtod(m, uint8_t *);
 
+                // Payload offset for VLAN packets
+                const uint32_t payload_off = l2_len_vlan + 20 + 8;
+
+                // ==========================================
+                // HEALTH MONITOR EARLY BRANCH
+                // HM paketleri PRBS paketlerinden çok daha küçük (ör. 182 B)
+                // olduğu için PRBS min_len_vlan (~1509 B) filtresinden ÖNCE
+                // kontrol edilmeli — aksi halde "short" olarak düşer.
+                // Sadece L2+IP+UDP header'ını kapsayan minimum boyut garanti
+                // edildikten sonra VL-ID çıkarılıyor.
+                // ==========================================
+                if (likely(m->pkt_len >= payload_off))
+                {
+                    uint16_t vl_id_hm = extract_vl_id_from_packet(pkt, l2_len_vlan);
+                    if (unlikely(hm_is_health_monitor_vl_id(vl_id_hm)))
+                    {
+                        uint16_t hm_len = (uint16_t)(m->pkt_len - payload_off);
+                        hm_handle_packet(vl_id_hm, pkt + payload_off, hm_len);
+                        // mbuf batch-free ile (loop sonunda) serbest bırakılacak.
+                        continue;
+                    }
+                }
+
 #if IMIX_ENABLED
                 // IMIX minimum: 100 bytes
                 if (unlikely(m->pkt_len < IMIX_MIN_PACKET_SIZE))
@@ -1493,31 +1516,8 @@ int rx_worker(void *arg)
                     continue;
                 }
 
-                // Payload offset for VLAN packets
-                const uint32_t payload_off = l2_len_vlan + 20 + 8;
-
                 //  Extract VL-ID from DST MAC (last 2 bytes)
                 uint16_t vl_id = extract_vl_id_from_packet(pkt, l2_len_vlan);
-
-// #if HEALTH_MONITOR_ENABLED
-                if (vl_id == HEALTH_MONITOR_FLCS_CBIT_VLID) 
-                {
-                    
-                }
-                else if (vl_id == HEALTH_MONITOR_VS_CBIT_VLID)
-                {
-
-                }
-                else if (vl_id == HEALTH_MONITOR_FLCS_PBIT_RESPONSE_VLID) 
-                {
-
-                }
-                else if (vl_id == HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID)
-                {
-                    
-                }
-                
-// #endif
                 // Get sequence number from payload
                 uint64_t seq = *(uint64_t *)(pkt + payload_off);
 

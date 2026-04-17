@@ -17,6 +17,7 @@
 #include "Packet.h"
 #include "TxRxManager.h"
 #include "AteMode.h"         // ATE test mode selection
+#include <health_monitor.h>  // HM printer thread start/stop
 
 // Check if --daemon flag is present and remove it from argv
 // Returns true if --daemon was found, also updates argc
@@ -286,6 +287,11 @@ int main(int argc, char const *argv[])
         return -1;
     }
 
+    // Start health monitor printer (pthread, lcore harcamaz)
+    if (hm_start_printer_thread(&force_quit) != 0) {
+        printf("Warning: health monitor printer thread failed to start\n");
+    }
+
     printf("\n=== Running (Press Ctrl+C to stop) ===\n");
     printf("  WARM-UP PHASE: First 60 seconds (stats will reset)\n\n");
 
@@ -370,6 +376,9 @@ int main(int argc, char const *argv[])
 
     printf("Waiting 5 seconds for RX counters to flush...\n");
     sleep(15);
+
+    // Stop health monitor printer before DPDK teardown
+    hm_stop_printer_thread();
 
     // Wait for all DPDK workers to stop
     rte_eal_mp_wait_lcore();

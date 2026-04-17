@@ -18,14 +18,14 @@ STATS_MODE_VMC ?= 1
 ATE_ROOT := $(shell pwd)/AteCumulus/AteTestMode
 
 # Compiler flags
-CFLAGS = -O3 -march=native -flto -ffast-math -funroll-loops -Wextra -I$(INCDIR) -I$(SRCDIR) -DNUM_TX_CORES=$(NUM_TX_CORES) -DNUM_RX_CORES=$(NUM_RX_CORES) -DUSE_VLAN=$(USE_VLAN) -DTARGET_GBPS=$(TARGET_GBPS) -DSTATS_MODE_VMC=$(STATS_MODE_VMC) -DATE_ROOT=\"$(ATE_ROOT)\"
-DEBUG_CFLAGS = -g -O3 -DDEBUG -march=native -Wall -Wextra -I$(INCDIR) -I$(SRCDIR) -DATE_ROOT=\"$(ATE_ROOT)\"
+CFLAGS = -O3 -march=native -flto -ffast-math -funroll-loops -Wextra -I$(INCDIR) -I$(INCDIR)/health_monitor -I$(SRCDIR) -DNUM_TX_CORES=$(NUM_TX_CORES) -DNUM_RX_CORES=$(NUM_RX_CORES) -DUSE_VLAN=$(USE_VLAN) -DTARGET_GBPS=$(TARGET_GBPS) -DSTATS_MODE_VMC=$(STATS_MODE_VMC) -DATE_ROOT=\"$(ATE_ROOT)\"
+DEBUG_CFLAGS = -g -O3 -DDEBUG -march=native -Wall -Wextra -I$(INCDIR) -I$(INCDIR)/health_monitor -I$(SRCDIR) -DATE_ROOT=\"$(ATE_ROOT)\"
 
 # Additional libraries (pthread for threading)
 EXTRA_LIBS = -lpthread
 
 # Source files
-SOURCES = $(wildcard $(SRCDIR)/*.c)
+SOURCES = $(wildcard $(SRCDIR)/*.c) $(wildcard $(SRCDIR)/health_monitor/*.c)
 
 # DPDK flags
 DPDK_FLAGS = $(shell pkg-config --cflags --libs libdpdk)
