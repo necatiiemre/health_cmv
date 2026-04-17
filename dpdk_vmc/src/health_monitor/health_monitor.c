@@ -216,8 +216,13 @@ static void parse_dtn_es(dtn_es_cbit_report_t *dst, const uint8_t *payload)
     m->A664_PTP_REQ_VL_ID  = be16_to_host(m->A664_PTP_REQ_VL_ID);
     m->A664_PTP_RES_VL_ID  = be16_to_host(m->A664_PTP_RES_VL_ID);
 
-    m->A664_ES_HW_TEMP                            = be32_to_host(m->A664_ES_HW_TEMP);
-    m->A664_ES_TRANSCEIVER_TEMP                   = be64_to_host(m->A664_ES_TRANSCEIVER_TEMP);
+    // HW_TEMP, HW_VCC_INT, TRANSCEIVER_TEMP hepsi float32 BE — bytes-swap edip yorum değişmiyor
+    {
+        uint32_t v;
+        memcpy(&v, &m->A664_ES_HW_TEMP, 4);           v = __builtin_bswap32(v); memcpy(&m->A664_ES_HW_TEMP,          &v, 4);
+        memcpy(&v, &m->A664_ES_HW_VCC_INT, 4);        v = __builtin_bswap32(v); memcpy(&m->A664_ES_HW_VCC_INT,       &v, 4);
+        memcpy(&v, &m->A664_ES_TRANSCEIVER_TEMP, 4);  v = __builtin_bswap32(v); memcpy(&m->A664_ES_TRANSCEIVER_TEMP, &v, 4);
+    }
     m->A664_ES_PORT_A_STATUS                      = be64_to_host(m->A664_ES_PORT_A_STATUS);
     m->A664_ES_PORT_B_STATUS                      = be64_to_host(m->A664_ES_PORT_B_STATUS);
     m->A664_ES_TX_INCOMING_COUNT                  = be64_to_host(m->A664_ES_TX_INCOMING_COUNT);
@@ -684,25 +689,38 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
     printf("========================================================================================\n");
 }
 
-// 2b. BM FLAG — 105 B, gövdesi VMC tarafında netleşene kadar hex dump.
+// 2b. BM FLAG — 105 B. İç yapı VMC tarafında dokümanlanana kadar tabloyu
+// "header + 93B flag bloğu"nun ofset-tabanlı tablosu olarak gösteriyoruz.
+// Non-zero offsetler için kısa özet satırı da düşüyor.
 void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *device_name)
 {
     if (!data) return;
     const char *prefix = device_name ? device_name : "UNKNOWN";
+
     printf("\n========================================================================================\n");
     printf("                           [%s] BM FLAG CBIT REPORT                                     \n", prefix);
     printf("========================================================================================\n");
-    printf(" msg_id=%u  msg_len=%u  ts=%lu  lru_id=%u\n",
-           data->header_st.message_identifier,
-           data->header_st.message_len,
-           (unsigned long)data->header_st.timestamp,
-           data->lru_id);
-    printf(" payload (93 B):");
-    for (size_t i = 0; i < sizeof(data->payload); i++) {
-        if (i % 16 == 0) printf("\n  %3zu:", i);
-        printf(" %02x", data->payload[i]);
+
+    printf("[ GENERAL ]\n");
+    printf(" Msg ID       : %-18u | Msg Len      : %u\n",
+           data->header_st.message_identifier, data->header_st.message_len);
+    printf(" Timestamp    : %-18lu | LRU ID       : %u\n",
+           (unsigned long)data->header_st.timestamp, data->lru_id);
+
+    printf("\n[ FLAG BLOCK (93 B, offsets within flag payload) ]\n");
+    printf(" OFFSET | BYTES                                           | NOTES\n");
+    printf("--------|-------------------------------------------------|----------------------\n");
+    for (size_t i = 0; i < sizeof(data->payload); i += 16) {
+        // satırın hex'i
+        char hexbuf[64]; size_t hp = 0;
+        int nz = 0;
+        for (size_t j = 0; j < 16 && i + j < sizeof(data->payload); j++) {
+            hp += (size_t)snprintf(hexbuf + hp, sizeof(hexbuf) - hp, "%02x ", data->payload[i + j]);
+            if (data->payload[i + j] != 0) nz++;
+        }
+        printf("  +%3zu  | %-47s | %s\n", i, hexbuf, nz ? "has non-zero bytes" : "(all zero)");
     }
-    printf("\n========================================================================================\n");
+    printf("========================================================================================\n");
 }
 
 // 3. DTN ES CBIT
@@ -722,10 +740,15 @@ void print_dtn_es_cbit_report(const dtn_es_cbit_report_t *data, const char *devi
 
     const dtn_es_monitoring_t *es = &data->dtn_es_monitoring_st;
     printf("\n[ DEVICE & PTP STATUS ]\n");
-    printf(" ES FW Ver    : %u.%u.%u              | HW Temp      : %u\n", es->A664_ES_FW_VER.major, es->A664_ES_FW_VER.minor, es->A664_ES_FW_VER.bugfix, es->A664_ES_HW_TEMP);
-    printf(" Device ID    : 0x%016lX | Transc Temp  : %lu\n", es->A664_ES_DEV_ID, es->A664_ES_TRANSCEIVER_TEMP);
-    printf(" ES Mode      : %lu                  | Port A Sync  : %u\n", es->A664_ES_MODE, es->A664_PTP_PORT_A_SYNC);
-    printf(" PTP RC Stat  : %u                  | Port B Sync  : %u\n", es->A664_PTP_RC_STATUS, es->A664_PTP_PORT_B_SYNC);
+    printf(" ES FW Ver    : %u.%u.%u              | HW Temp      : %.3f °C\n",
+           es->A664_ES_FW_VER.major, es->A664_ES_FW_VER.minor, es->A664_ES_FW_VER.bugfix,
+           es->A664_ES_HW_TEMP);
+    printf(" Device ID    : %-18lu | HW VCC Int   : %.3f V\n",
+           (unsigned long)es->A664_ES_DEV_ID, es->A664_ES_HW_VCC_INT);
+    printf(" ES Mode      : %-18lu | Transc Temp  : %.3f °C\n",
+           (unsigned long)es->A664_ES_MODE, es->A664_ES_TRANSCEIVER_TEMP);
+    printf(" PTP RC Stat  : %-18u | Port A Sync  : %u\n", es->A664_PTP_RC_STATUS, es->A664_PTP_PORT_A_SYNC);
+    printf(" Config ID    : %-18lu | Port B Sync  : %u\n", (unsigned long)es->A664_ES_CONFIG_ID, es->A664_PTP_PORT_B_SYNC);
 
     printf("\n[ TRAFFIC METRICS ]\n");
     printf(" %-40s | %-40s\n", "TX COUNTERS", "RX COUNTERS");
@@ -754,15 +777,25 @@ void print_dtn_sw_cbit_report(const dtn_sw_cbit_report_t *data, const char *devi
 
     const dtn_sw_status_mon_t *sw = &data->dtn_sw_monitoring_st.status;
     printf("\n[ SWITCH STATUS ]\n");
-    printf(" Device ID    : 0x%04X              | FW Version   : 0x%016lX\n", sw->A664_SW_DEV_ID, sw->A664_SW_FW_VER);
-    printf(" TX Total Cnt : %-18lu | RX Total Cnt : %lu\n", sw->A664_SW_TX_TOTAL_COUNT, sw->A664_SW_RX_TOTAL_COUNT);
-    printf(" Transc Temp  : %-8.3f        | Shared Temp  : %.3f\n",
+    // FW version'ı u64'ün düşük 3 byte'ı major.minor.bugfix olarak yorumla
+    uint8_t fw_major  = (uint8_t)((sw->A664_SW_FW_VER >> 16) & 0xff);
+    uint8_t fw_minor  = (uint8_t)((sw->A664_SW_FW_VER >>  8) & 0xff);
+    uint8_t fw_bugfix = (uint8_t)( sw->A664_SW_FW_VER        & 0xff);
+    uint8_t ef_major  = (uint8_t)((sw->A664_SW_EMBEDEED_ES_FW_VER >> 16) & 0xff);
+    uint8_t ef_minor  = (uint8_t)((sw->A664_SW_EMBEDEED_ES_FW_VER >>  8) & 0xff);
+    uint8_t ef_bugfix = (uint8_t)( sw->A664_SW_EMBEDEED_ES_FW_VER        & 0xff);
+
+    printf(" Device ID    : %-18u | FW Version   : %u.%u.%u\n",
+           sw->A664_SW_DEV_ID, fw_major, fw_minor, fw_bugfix);
+    printf(" TX Total Cnt : %-18lu | RX Total Cnt : %lu\n",
+           (unsigned long)sw->A664_SW_TX_TOTAL_COUNT, (unsigned long)sw->A664_SW_RX_TOTAL_COUNT);
+    printf(" Transc Temp  : %-8.3f °C     | Shared Temp  : %.3f °C\n",
            sw->A664_SW_TRANSCEIVER_TEMP, sw->A664_SW_SHARED_TRANSCEIVER_TEMP);
-    printf(" Voltage      : %-8.3f        | Temperature  : %.3f\n",
+    printf(" Voltage      : %-8.3f V      | Temperature  : %.3f °C\n",
            sw->A664_SW_VOLTAGE, sw->A664_SW_TEMPERATURE);
     printf(" Port Count   : %-18u | Mode         : %u\n", sw->A664_SW_PORT_COUNT, sw->A664_SW_MODE);
-    printf(" Config ID    : 0x%04X              | Embedded FW  : 0x%016lX\n",
-           sw->A664_SW_CONFIGURATION_ID, sw->A664_SW_EMBEDEED_ES_FW_VER);
+    printf(" Config ID    : %-18u | Embedded FW  : %u.%u.%u\n",
+           sw->A664_SW_CONFIGURATION_ID, ef_major, ef_minor, ef_bugfix);
 
     printf("\n[ PORT STATUS OVERVIEW ]\n");
     printf(" %-4s | %-6s | %-8s | %-12s | %-12s | %-12s | %-12s\n",
