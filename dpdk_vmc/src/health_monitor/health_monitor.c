@@ -384,6 +384,18 @@ void print_dtn_sw_cbit_report(const dtn_sw_cbit_report_t *data, const char *devi
 }
 
 // 5. CPU USAGE (Pcs_profile_stats)
+//
+// Birim notu: tüm zaman alanları NANOSANIYE (ns).
+//   total_run_time  : örnekleme penceresi genişliği (ör. ~47 ms ≈ 47,000,000 ns)
+//   usage           : o pencerede CPU'nun meşgul geçirdiği süre (ns)
+//   percentage      ≈ (usage / total_run_time) × 100
+//   latest_read_time: son örneklemenin zaman damgası (ns, monotonik)
+//   Bellek alanları BYTE cinsindendir.
+static inline double ns_to_ms(uint64_t ns) { return (double)ns / 1.0e6; }
+static inline double ns_to_s (uint64_t ns) { return (double)ns / 1.0e9; }
+static inline double b_to_kb (uint64_t b)  { return (double)b  / 1024.0; }
+static inline double b_to_mb (uint64_t b)  { return (double)b  / (1024.0 * 1024.0); }
+
 void print_pcs_profile_stats(const Pcs_profile_stats *data, const char *device_name)
 {
     if (!data) return;
@@ -393,31 +405,37 @@ void print_pcs_profile_stats(const Pcs_profile_stats *data, const char *device_n
     printf("\n========================================================================================\n");
     printf("                             [%s] CPU USAGE / PROFILE STATS                            \n", prefix);
     printf("========================================================================================\n");
+    printf("(time fields in ns, memory fields in bytes)\n");
 
-    printf("[ GENERAL ]\n");
-    printf(" Sample Count     : %lu\n", (unsigned long)data->sample_count);
-    printf(" Latest Read Time : %lu\n", (unsigned long)data->latest_read_time);
-    printf(" Total Run Time   : %lu\n", (unsigned long)data->total_run_time);
+    printf("\n[ GENERAL ]\n");
+    printf(" Sample Count     : %lu\n",                     (unsigned long)data->sample_count);
+    printf(" Latest Read Time : %lu ns  (%.3f s)\n",        (unsigned long)data->latest_read_time, ns_to_s (data->latest_read_time));
+    printf(" Total Run Time   : %lu ns  (%.3f ms window)\n",(unsigned long)data->total_run_time,   ns_to_ms(data->total_run_time));
 
     const Pcs_cpu_exec_time_type *ct = &data->cpu_exec_time;
-    printf("\n[ CPU EXEC TIME ]\n");
-    printf(" %-10s | %-12s | %-18s\n", "KIND", "PERCENTAGE", "USAGE");
-    printf("------------|--------------|--------------------\n");
-    printf(" %-10s | %-10u %% | %lu\n", "min",  ct->min_exec_time.percentage,  (unsigned long)ct->min_exec_time.usage);
-    printf(" %-10s | %-10u %% | %lu\n", "max",  ct->max_exec_time.percentage,  (unsigned long)ct->max_exec_time.usage);
-    printf(" %-10s | %-10u %% | %lu\n", "avg",  ct->avg_exec_time.percentage,  (unsigned long)ct->avg_exec_time.usage);
-    printf(" %-10s | %-10u %% | %lu\n", "last", ct->last_exec_time.percentage, (unsigned long)ct->last_exec_time.usage);
+    printf("\n[ CPU EXEC TIME ]  usage = CPU busy ns in the %.3f ms window\n", ns_to_ms(data->total_run_time));
+    printf(" %-6s | %-10s | %-18s | %-12s\n", "KIND", "PERCENT", "USAGE (ns)", "USAGE (ms)");
+    printf("--------|------------|--------------------|-------------\n");
+    printf(" %-6s | %-8u %% | %-18lu | %10.3f\n", "min",  ct->min_exec_time.percentage,  (unsigned long)ct->min_exec_time.usage,  ns_to_ms(ct->min_exec_time.usage));
+    printf(" %-6s | %-8u %% | %-18lu | %10.3f\n", "max",  ct->max_exec_time.percentage,  (unsigned long)ct->max_exec_time.usage,  ns_to_ms(ct->max_exec_time.usage));
+    printf(" %-6s | %-8u %% | %-18lu | %10.3f\n", "avg",  ct->avg_exec_time.percentage,  (unsigned long)ct->avg_exec_time.usage,  ns_to_ms(ct->avg_exec_time.usage));
+    printf(" %-6s | %-8u %% | %-18lu | %10.3f\n", "last", ct->last_exec_time.percentage, (unsigned long)ct->last_exec_time.usage, ns_to_ms(ct->last_exec_time.usage));
 
-    printf("\n[ MEMORY PROFILE ]\n");
-    printf(" %-10s | %-14s | %-14s | %-14s\n", "REGION", "TOTAL", "USED", "MAX USED");
-    printf("------------|----------------|----------------|----------------\n");
-    printf(" %-10s | %-14lu | %-14lu | %-14lu\n", "heap",
+    printf("\n[ MEMORY PROFILE ]  sizes in bytes (KB = bytes/1024, MB = bytes/1048576)\n");
+    printf(" %-6s | %-14s | %-14s | %-14s | %-10s | %-10s\n",
+           "REGION", "TOTAL (B)", "USED (B)", "MAX USED (B)", "TOTAL(MB)", "USED(KB)");
+    printf("--------|----------------|----------------|----------------|------------|-----------\n");
+    printf(" %-6s | %-14lu | %-14lu | %-14lu | %10.2f | %10.2f\n", "heap",
            (unsigned long)data->heap_mem.total_size,
            (unsigned long)data->heap_mem.used_size,
-           (unsigned long)data->heap_mem.max_used_size);
-    printf(" %-10s | %-14lu | %-14lu | %-14lu\n", "stack",
+           (unsigned long)data->heap_mem.max_used_size,
+           b_to_mb(data->heap_mem.total_size),
+           b_to_kb(data->heap_mem.used_size));
+    printf(" %-6s | %-14lu | %-14lu | %-14lu | %10.2f | %10.2f\n", "stack",
            (unsigned long)data->stack_mem.total_size,
            (unsigned long)data->stack_mem.used_size,
-           (unsigned long)data->stack_mem.max_used_size);
+           (unsigned long)data->stack_mem.max_used_size,
+           b_to_mb(data->stack_mem.total_size),
+           b_to_kb(data->stack_mem.used_size));
     printf("========================================================================================\n");
 }
