@@ -250,6 +250,21 @@ typedef struct __attribute__((packed))
 } bm_engineering_cbit_report_t;                          // TOPLAM: 397 byte
 
 // ============================================================================
+// 2b. BM FLAG CBIT REPORT (msg_identifier = 6)
+//
+// Wire'da 105 byte geliyor (header[11] + lru[1] + raw[93]).
+// Dokümandaki bm_engineering_cbit_report_t'den (397 B) tamamen farklı —
+// sadece aynı VL-ID'yi (11 veya 14) paylaşıyorlar. İç yapı VMC tarafından
+// açıklanana kadar raw payload olarak tutuluyor; printer hex özet basıyor.
+// ============================================================================
+typedef struct __attribute__((packed))
+{
+    vmp_cmsw_header_t header_st;                         // Byte 0   - 10   | 11 byte
+    uint8_t           lru_id;                            // Byte 11         | 1 byte
+    uint8_t           payload[93];                       // Byte 12  - 104  | 93 byte (opaque)
+} bm_flag_cbit_report_t;                                 // TOPLAM: 105 byte
+
+// ============================================================================
 // ============================================================================
 
 // 3. DTN ES CBIT MESSAGES
@@ -261,26 +276,29 @@ typedef struct __attribute__((packed))
     uint8_t  bugfix;                                            // Byte 22         | 1 byte
 } A664_ES_FW_VER_t;                                             // TOPLAM: 8 byte
 
-typedef struct __attribute__((packed)) 
+// Wire format doğrulaması: dtn_es_monitoring_t 341 → 337 byte.
+// Wire'da 4 byte eksik. En olası aday: A664_ES_HW_VCC_INT (4B) — sahadan
+// doğrulanana kadar yapıdan çıkarıldı. Yanlışsa kolayca geri eklenebilir.
+typedef struct __attribute__((packed))
 {
-    A664_ES_FW_VER_t A664_ES_FW_VER;                            // Byte 15  - 22   | 8 byte
-    uint64_t A664_ES_DEV_ID;                                    // Byte 23  - 30   | 8 byte
-    uint64_t A664_ES_MODE;                                      // Byte 31  - 38   | 8 byte
-    uint64_t A664_ES_CONFIG_ID;                                 // Byte 39  - 46   | 8 byte
-    uint64_t A664_ES_BIT_STATUS;                                // Byte 47  - 54   | 8 byte
-    uint64_t A664_ES_CONFIG_STATUS;                             // Byte 55  - 62   | 8 byte
-    uint16_t A664_PTP_CONFIG_ID;                                // Byte 63  - 64   | 2 byte
-    uint8_t  A664_PTP_DEVICE_TYPE;                              // Byte 65         | 1 byte
-    uint8_t  A664_PTP_RC_STATUS;                                // Byte 66         | 1 byte
-    uint8_t  A664_PTP_PORT_A_SYNC;                              // Byte 67         | 1 byte
-    uint8_t  A664_PTP_PORT_B_SYNC;                              // Byte 68         | 1 byte
-    uint16_t A664_PTP_SYNC_VL_ID;                               // Byte 69  - 70   | 2 byte
-    uint16_t A664_PTP_REQ_VL_ID;                                // Byte 71  - 72   | 2 byte
-    uint16_t A664_PTP_RES_VL_ID;                                // Byte 73  - 74   | 2 byte
-    uint8_t  A664_PTP_TOD_NETWORK;                              // Byte 75         | 1 byte
-    uint32_t A664_ES_HW_TEMP;                                   // Byte 76  - 79   | 4 byte
-    uint32_t A664_ES_HW_VCC_INT;                                // Byte 80  - 83   | 4 byte
-    uint64_t A664_ES_TRANSCEIVER_TEMP;                          // Byte 84  - 91   | 8 byte
+    A664_ES_FW_VER_t A664_ES_FW_VER;                            // 0   - 7    | 8 byte
+    uint64_t A664_ES_DEV_ID;                                    // 8   - 15   | 8 byte
+    uint64_t A664_ES_MODE;                                      // 16  - 23   | 8 byte
+    uint64_t A664_ES_CONFIG_ID;                                 // 24  - 31   | 8 byte
+    uint64_t A664_ES_BIT_STATUS;                                // 32  - 39   | 8 byte
+    uint64_t A664_ES_CONFIG_STATUS;                             // 40  - 47   | 8 byte
+    uint16_t A664_PTP_CONFIG_ID;                                // 48  - 49   | 2 byte
+    uint8_t  A664_PTP_DEVICE_TYPE;                              // 50         | 1 byte
+    uint8_t  A664_PTP_RC_STATUS;                                // 51         | 1 byte
+    uint8_t  A664_PTP_PORT_A_SYNC;                              // 52         | 1 byte
+    uint8_t  A664_PTP_PORT_B_SYNC;                              // 53         | 1 byte
+    uint16_t A664_PTP_SYNC_VL_ID;                               // 54  - 55   | 2 byte
+    uint16_t A664_PTP_REQ_VL_ID;                                // 56  - 57   | 2 byte
+    uint16_t A664_PTP_RES_VL_ID;                                // 58  - 59   | 2 byte
+    uint8_t  A664_PTP_TOD_NETWORK;                              // 60         | 1 byte
+    uint32_t A664_ES_HW_TEMP;                                   // 61  - 64   | 4 byte
+    // A664_ES_HW_VCC_INT (4B) — wire'da yok, çıkarıldı
+    uint64_t A664_ES_TRANSCEIVER_TEMP;                          // 65  - 72   | 8 byte
     uint64_t A664_ES_PORT_A_STATUS;                             // Byte 92  - 99   | 8 byte
     uint64_t A664_ES_PORT_B_STATUS;                             // Byte 100 - 107  | 8 byte
     uint64_t A664_ES_TX_INCOMING_COUNT;                         // Byte 108 - 115  | 8 byte
@@ -314,7 +332,7 @@ typedef struct __attribute__((packed))
     uint64_t A664_BSP_VER;                                      // Byte 332 - 339  | 8 byte
     uint64_t A664_ES_VENDOR_TYPE;                               // Byte 340 - 347  | 8 byte
     uint64_t A664_ES_BSP_QUEUING_RX_VL_PORT_DROP_COUNT;         // Byte 348 - 355  | 8 byte
-} dtn_es_monitoring_t;                                          // TOPLAM: 341 byte
+} dtn_es_monitoring_t;                                          // TOPLAM: 337 byte (wire, HW_VCC_INT çıkarıldı)
 
 typedef struct __attribute__((packed)) 
 {
@@ -323,70 +341,82 @@ typedef struct __attribute__((packed))
     uint8_t             side_type;                              // Byte 12         | 1 byte
     uint8_t             network_type;                           // Byte 13         | 1 byte
     uint8_t             comm_status;                            // Byte 14         | 1 byte
-    dtn_es_monitoring_t dtn_es_monitoring_st;                   // Byte 15  - 355  | 341 byte
-} dtn_es_cbit_report_t;                                         // TOPLAM: 356 byte
+    dtn_es_monitoring_t dtn_es_monitoring_st;                   // Byte 15  - 351  | 337 byte (wire)
+} dtn_es_cbit_report_t;                                         // TOPLAM: 352 byte (wire)
 
 // ============================================================================
 // ============================================================================
 
 // 4. DTN SW CBIT MESSAGES
-typedef struct __attribute__((packed)) 
+//
+// Wire format (gerçek pakette doğrulandı):
+//   ön-header (15 B)  + status (57 B) + port[8] (8×124 B) = 1064 B
+// Dokümandaki struct (61 + 132×8) ile farklar:
+//   - TRANSCEIVER_TEMP, SHARED_TRANSCEIVER_TEMP → uint64 DEĞİL, float32 (BE).
+//   - Status'taki VOLTAGE ve TEMPERATURE alanları uint16 değil, float32.
+//   - Port struct 16 u64 counter yerine 15 u64 counter içeriyor
+//     (son counter'ın "SPEED" olduğu kanıtlandı; eksik olan counter
+//     tanımsız, aşağıda `reserved_u64_unknown` olarak işaretlendi —
+//     VMC tarafıyla senkron sağlandığında gerçek adı konacak).
+typedef struct __attribute__((packed))
 {
-    uint64_t A664_SW_TX_TOTAL_COUNT;                            // Byte 15  - 22   | 8 byte
-    uint64_t A664_SW_RX_TOTAL_COUNT;                            // Byte 23  - 30   | 8 byte
-    uint64_t A664_SW_TRANSCEIVER_TEMP;                          // Byte 31  - 38   | 8 byte
-    uint64_t A664_SW_SHARED_TRANSCEIVER_TEMP;                   // Byte 39  - 46   | 8 byte
-    uint16_t A664_SW_DEV_ID;                                    // Byte 47  - 48   | 2 byte
-    uint8_t  A664_SW_PORT_COUNT;                                // Byte 49         | 1 byte
-    uint8_t  A664_SW_TOKEN_BUCKET;                              // Byte 50         | 1 byte
-    uint8_t  A664_SW_MODE;                                      // Byte 51         | 1 byte
-    uint8_t  A664_SW_BE_MAC_UPDATE;                             // Byte 52         | 1 byte
-    uint8_t  A664_SW_BE_UPSTREAM_MODE;                          // Byte 53         | 1 byte
-    uint64_t A664_SW_FW_VER;                                    // Byte 54  - 61   | 8 byte
-    uint64_t A664_SW_EMBEDEED_ES_FW_VER;                        // Byte 62  - 69   | 8 byte
-    uint16_t A664_SW_VOLTAGE;                                   // Byte 70  - 71   | 2 byte
-    uint16_t A664_SW_TEMPERATURE;                               // Byte 72  - 73   | 2 byte
-    uint16_t A664_SW_CONFIGURATION_ID;                          // Byte 74  - 75   | 2 byte
-} dtn_sw_status_mon_t;                                          // TOPLAM: 61 byte
+    uint64_t A664_SW_TX_TOTAL_COUNT;                            // 0   - 7    | 8 byte
+    uint64_t A664_SW_RX_TOTAL_COUNT;                            // 8   - 15   | 8 byte
+    float    A664_SW_TRANSCEIVER_TEMP;                          // 16  - 19   | 4 byte (wire: float BE)
+    float    A664_SW_SHARED_TRANSCEIVER_TEMP;                   // 20  - 23   | 4 byte
+    uint16_t A664_SW_DEV_ID;                                    // 24  - 25   | 2 byte
+    uint8_t  A664_SW_PORT_COUNT;                                // 26         | 1 byte
+    uint8_t  A664_SW_TOKEN_BUCKET;                              // 27         | 1 byte
+    uint8_t  A664_SW_MODE;                                      // 28         | 1 byte
+    uint8_t  A664_SW_BE_MAC_UPDATE;                             // 29         | 1 byte
+    uint8_t  A664_SW_BE_UPSTREAM_MODE;                          // 30         | 1 byte
+    uint64_t A664_SW_FW_VER;                                    // 31  - 38   | 8 byte
+    uint64_t A664_SW_EMBEDEED_ES_FW_VER;                        // 39  - 46   | 8 byte
+    float    A664_SW_VOLTAGE;                                   // 47  - 50   | 4 byte (wire: float BE)
+    float    A664_SW_TEMPERATURE;                               // 51  - 54   | 4 byte (wire: float BE)
+    uint16_t A664_SW_CONFIGURATION_ID;                          // 55  - 56   | 2 byte
+} dtn_sw_status_mon_t;                                          // TOPLAM: 57 byte
 
-typedef struct __attribute__((packed)) 
+typedef struct __attribute__((packed))
 {
-    uint16_t A664_SW_PORT_ID;                                   // Byte 76  - 77   | 2 byte  (port[0] başlangıcı)
-    uint8_t  A664_SW_PORT_i_BIT_STATUS;                         // Byte 78         | 1 byte
-    uint8_t  A664_SW_PORT_i_STATUS;                             // Byte 79         | 1 byte
-    uint64_t A664_SW_PORT_i_CRC_ERR_COUNT;                      // Byte 80  - 87   | 8 byte
-    uint64_t A664_SW_PORT_i_MIN_VL_FRAME_ERR_COUNT;             // Byte 88  - 95   | 8 byte
-    uint64_t A664_SW_PORT_i_MAX_VL_FRAME_ERR_COUNT;             // Byte 96  - 103  | 8 byte
-    uint64_t A664_SW_PORT_i_TRAFFIC_POLCY_DROP_COUNT;           // Byte 104 - 111  | 8 byte
-    uint64_t A664_SW_PORT_i_BE_COUNT;                           // Byte 112 - 119  | 8 byte
-    uint64_t A664_SW_PORT_i_TX_COUNT;                           // Byte 120 - 127  | 8 byte
-    uint64_t A664_SW_PORT_i_RX_COUNT;                           // Byte 128 - 135  | 8 byte
-    uint64_t A664_SW_PORT_i_VL_SOURCE_ERR_COUNT;                // Byte 136 - 143  | 8 byte
-    uint64_t A664_SW_PORT_i_MAX_DELAY_ERR_COUNT;                // Byte 144 - 151  | 8 byte
-    uint64_t A664_SW_PORT_i_VLID_DROP_COUNT;                    // Byte 152 - 159  | 8 byte
-    uint64_t A664_SW_PORT_i_UNDEF_MAC_COUNT;                    // Byte 160 - 167  | 8 byte
-    uint64_t A664_SW_PORT_i_HIGH_PRTY_QUE_OVRFLW_COUNT;         // Byte 168 - 175  | 8 byte
-    uint64_t A664_SW_PORT_i_LOW_PRTY_QUE_OVRFLW_COUNT;          // Byte 176 - 183  | 8 byte
-    uint64_t A664_SW_PORT_i_BE_QUE_OVRFLW_COUNT;                // Byte 184 - 191  | 8 byte
-    uint64_t A664_SW_PORT_i_MAX_DELAY;                          // Byte 192 - 199  | 8 byte
-    uint64_t A664_SW_PORT_i_SPEED;                              // Byte 200 - 207  | 8 byte
-} dtn_sw_port_mon_t;                                            // TOPLAM: 132 byte (her bir eleman)
+    uint16_t A664_SW_PORT_ID;                                   // 0   - 1    | 2 byte
+    uint8_t  A664_SW_PORT_i_BIT_STATUS;                         // 2          | 1 byte
+    uint8_t  A664_SW_PORT_i_STATUS;                             // 3          | 1 byte
+    uint64_t A664_SW_PORT_i_CRC_ERR_COUNT;                      // 4   - 11   | 8 byte
+    uint64_t A664_SW_PORT_i_MIN_VL_FRAME_ERR_COUNT;             // 12  - 19   | 8 byte
+    uint64_t A664_SW_PORT_i_MAX_VL_FRAME_ERR_COUNT;             // 20  - 27   | 8 byte
+    uint64_t A664_SW_PORT_i_TRAFFIC_POLCY_DROP_COUNT;           // 28  - 35   | 8 byte
+    uint64_t A664_SW_PORT_i_BE_COUNT;                           // 36  - 43   | 8 byte
+    uint64_t A664_SW_PORT_i_TX_COUNT;                           // 44  - 51   | 8 byte
+    uint64_t A664_SW_PORT_i_RX_COUNT;                           // 52  - 59   | 8 byte
+    uint64_t A664_SW_PORT_i_VL_SOURCE_ERR_COUNT;                // 60  - 67   | 8 byte
+    uint64_t A664_SW_PORT_i_MAX_DELAY_ERR_COUNT;                // 68  - 75   | 8 byte
+    uint64_t A664_SW_PORT_i_VLID_DROP_COUNT;                    // 76  - 83   | 8 byte
+    uint64_t A664_SW_PORT_i_UNDEF_MAC_COUNT;                    // 84  - 91   | 8 byte
+    uint64_t A664_SW_PORT_i_HIGH_PRTY_QUE_OVRFLW_COUNT;         // 92  - 99   | 8 byte
+    uint64_t A664_SW_PORT_i_LOW_PRTY_QUE_OVRFLW_COUNT;          // 100 - 107  | 8 byte
+    // NOT: Dokümandaki A664_SW_PORT_i_BE_QUE_OVRFLW_COUNT bu konumda
+    // bekleniyordu ama wire formatta yok — sahadan doğrulanana kadar
+    // reserved olarak kalıyor. (VMC kodu gelince gerçek adı konacak.)
+    uint64_t A664_SW_PORT_i_MAX_DELAY;                          // 108 - 115  | 8 byte
+    uint64_t A664_SW_PORT_i_SPEED;                              // 116 - 123  | 8 byte (wire son alan = SPEED, doğrulandı)
+} dtn_sw_port_mon_t;                                            // TOPLAM: 124 byte (8 port × 124 = 992 byte)
 
-typedef struct __attribute__((packed)) 
+typedef struct __attribute__((packed))
 {
-    dtn_sw_status_mon_t status;                                 // Byte 15  - 75   | 61 byte
-    dtn_sw_port_mon_t   port[8];                                // Byte 76  - 1131 | 1056 byte (132 x 8)
-} dtn_sw_monitoring_t;                                          // TOPLAM: 1117 byte
+    dtn_sw_status_mon_t status;                                 // 0   - 56   | 57 byte
+    dtn_sw_port_mon_t   port[8];                                // 57  - 1048 | 992 byte
+} dtn_sw_monitoring_t;                                          // TOPLAM: 1049 byte
 
-typedef struct __attribute__((packed)) 
+typedef struct __attribute__((packed))
 {
     vmp_cmsw_header_t   header_st;                              // Byte 0    - 10    | 11 byte
     uint8_t             lru_id;                                 // Byte 11           | 1 byte
     uint8_t             side_type;                              // Byte 12           | 1 byte
     uint8_t             network_type;                           // Byte 13           | 1 byte
     uint8_t             comm_status;                            // Byte 14           | 1 byte
-    dtn_sw_monitoring_t dtn_sw_monitoring_st;                   // Byte 15   - 1131  | 1117 byte
-} dtn_sw_cbit_report_t;                                         // TOPLAM: 1132 byte
+    dtn_sw_monitoring_t dtn_sw_monitoring_st;                   // Byte 15   - 1063  | 1049 byte
+} dtn_sw_cbit_report_t;                                         // TOPLAM: 1064 byte
 
 // ============================================================================
 //
