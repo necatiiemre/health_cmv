@@ -34,17 +34,36 @@ typedef struct {
     pthread_mutex_t              lock;
     bool                         updated;
     uint64_t                     update_count;
-} hm_cbit_slot_t;
+} hm_bm_slot_t;
 
-// VS tarafı
-static hm_pcs_slot_t  vs_cpu_usage_slot    = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_pbit_slot_t vs_pbit_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_cbit_slot_t vs_cbit_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
+// Opaque paket bilgisi — henüz struct kesinleşmemiş türler için
+// (DTN ES / DTN SW / BM Flag). Sadece son gelen paketin wire boyutu,
+// msg_id ve timestamp bilgisini tutar; içerik hex olarak printer thread'de
+// özetlenir. Struct netleştikçe tam parse'a geçilecek.
+typedef struct {
+    pthread_mutex_t lock;
+    bool            updated;
+    uint64_t        update_count;
+    uint16_t        last_len;
+    uint64_t        last_timestamp;
+    uint8_t         buf[1200];   // max gözlenen ~1132 B; emniyetli tavan
+} hm_opaque_slot_t;
 
-// FLCS tarafı (şu an handler yok ama slot yeri hazır)
-static hm_pcs_slot_t  flcs_cpu_usage_slot  = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_pbit_slot_t flcs_pbit_slot       = {.lock = PTHREAD_MUTEX_INITIALIZER};
-static hm_cbit_slot_t flcs_cbit_slot       = {.lock = PTHREAD_MUTEX_INITIALIZER};
+// VS tarafı — CPU USAGE + PBIT + 4 CBIT türü
+static hm_pcs_slot_t    vs_cpu_usage_slot     = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_pbit_slot_t   vs_pbit_slot          = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_bm_slot_t     vs_bm_engineering_slot = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_opaque_slot_t vs_bm_flag_slot       = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_opaque_slot_t vs_dtn_es_slot        = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_opaque_slot_t vs_dtn_sw_slot        = {.lock = PTHREAD_MUTEX_INITIALIZER};
+
+// FLCS tarafı — ayna
+static hm_pcs_slot_t    flcs_cpu_usage_slot      = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_pbit_slot_t   flcs_pbit_slot           = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_bm_slot_t     flcs_bm_engineering_slot = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_opaque_slot_t flcs_bm_flag_slot        = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_opaque_slot_t flcs_dtn_es_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
+static hm_opaque_slot_t flcs_dtn_sw_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
 
 // Printer thread durumu
 static pthread_t        g_printer_thread;
@@ -55,7 +74,9 @@ static volatile bool    g_printer_running = false;
 static volatile uint64_t g_hm_rx_total        = 0;  // hm_handle_packet çağrı sayısı
 static volatile uint64_t g_hm_rx_vs_cpu       = 0;
 static volatile uint64_t g_hm_rx_flcs_cpu     = 0;
+static volatile uint64_t g_hm_rx_cbit         = 0;  // VL-ID 11/14 toplam
 static volatile uint64_t g_hm_rx_unknown_vlid = 0;
+static volatile uint64_t g_hm_rx_unknown_msg  = 0;  // CBIT içinde bilinmeyen msg_id
 static volatile uint64_t g_hm_rx_short        = 0;
 
 // ============================================================================
@@ -79,6 +100,22 @@ static inline void swap_mem(Pcs_mem_profile_type *m)
     m->max_used_size = be64_to_host(m->max_used_size);
 }
 
+// Float dizisini yerinde BE→host swap et (IEEE-754 4-byte değerler).
+static inline void bswap_float_array(float *arr, size_t count)
+{
+    uint32_t *u = (uint32_t *)arr;
+    for (size_t i = 0; i < count; i++) {
+        u[i] = __builtin_bswap32(u[i]);
+    }
+}
+
+// vmp_cmsw_header_t alanlarını (msg_len, timestamp) swap et.
+static inline void swap_vmp_header(vmp_cmsw_header_t *h)
+{
+    h->message_len = be16_to_host(h->message_len);
+    h->timestamp   = be64_to_host(h->timestamp);
+}
+
 // ============================================================================
 // VS CPU USAGE parse
 // ============================================================================
@@ -97,6 +134,52 @@ static void parse_pcs_profile_stats(Pcs_profile_stats *dst, const uint8_t *paylo
 
     swap_mem(&dst->heap_mem);
     swap_mem(&dst->stack_mem);
+}
+
+// BM Engineering raporunu parse eder. Struct 397 B'lik wire formatıyla
+// BIRE BIR uyumlu (kanıtlandı). Status blokları yalnızca float32 alanlardan
+// oluşuyor; header sonrası 384 byte = 96 adet float kesintisiz sıralı.
+static void parse_bm_engineering(bm_engineering_cbit_report_t *dst, const uint8_t *payload)
+{
+    memcpy(dst, payload, sizeof(*dst));
+
+    swap_vmp_header(&dst->header_st);
+
+    // Float region start: vmp_cmsw_header_t(11) + lru_id(1) + comm_status(1) = 13
+    // 96 float × 4 byte = 384 byte. Packed struct içinde unaligned erişim
+    // olmasın diye memcpy ile okuyup yazıyoruz.
+    uint8_t *bytes = (uint8_t *)dst + 13;
+    for (size_t i = 0; i < 96; i++) {
+        uint32_t v;
+        memcpy(&v, bytes + i * 4, sizeof(v));
+        v = __builtin_bswap32(v);
+        memcpy(bytes + i * 4, &v, sizeof(v));
+    }
+    (void)bswap_float_array; // helper leri ilerideki yeni parse'larda kullanacağız
+}
+
+// Tam parse edilmeyen türler için: son paketin wire kopyası + timestamp tutulur.
+// printer thread bu slot'u özetle basar.
+static void store_opaque(hm_opaque_slot_t *slot,
+                         const uint8_t *payload, uint16_t len)
+{
+    uint16_t copy_len = len;
+    if (copy_len > sizeof(slot->buf)) copy_len = sizeof(slot->buf);
+
+    uint64_t ts = 0;
+    if (len >= sizeof(vmp_cmsw_header_t)) {
+        vmp_cmsw_header_t hdr;
+        memcpy(&hdr, payload, sizeof(hdr));
+        ts = be64_to_host(hdr.timestamp);
+    }
+
+    pthread_mutex_lock(&slot->lock);
+    memcpy(slot->buf, payload, copy_len);
+    slot->last_len       = len;
+    slot->last_timestamp = ts;
+    slot->updated        = true;
+    slot->update_count++;
+    pthread_mutex_unlock(&slot->lock);
 }
 
 // ============================================================================
@@ -136,7 +219,59 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
             __atomic_add_fetch(&g_hm_rx_flcs_cpu, 1, __ATOMIC_RELAXED);
             break;
 
-        // TODO: diğer HM VLID'leri (PBIT_RESPONSE, CBIT) aynı desene göre eklenecek
+        case HEALTH_MONITOR_FLCS_CBIT_VLID:
+        case HEALTH_MONITOR_VS_CBIT_VLID:
+        {
+            if (len < sizeof(vmp_cmsw_header_t)) {
+                __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
+            __atomic_add_fetch(&g_hm_rx_cbit, 1, __ATOMIC_RELAXED);
+
+            const bool is_vs = (vl_id == HEALTH_MONITOR_VS_CBIT_VLID);
+            const uint8_t msg_id = payload[0];
+
+            switch (msg_id)
+            {
+                case HM_CBIT_MSG_ID_BM_ENGINEERING:
+                {
+                    if (len < sizeof(bm_engineering_cbit_report_t)) {
+                        __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                        break;
+                    }
+                    hm_bm_slot_t *slot = is_vs ? &vs_bm_engineering_slot
+                                               : &flcs_bm_engineering_slot;
+                    pthread_mutex_lock(&slot->lock);
+                    parse_bm_engineering(&slot->data, payload);
+                    slot->updated = true;
+                    slot->update_count++;
+                    pthread_mutex_unlock(&slot->lock);
+                    break;
+                }
+
+                case HM_CBIT_MSG_ID_BM_FLAG:
+                    store_opaque(is_vs ? &vs_bm_flag_slot : &flcs_bm_flag_slot,
+                                 payload, len);
+                    break;
+
+                case HM_CBIT_MSG_ID_DTN_ES:
+                    store_opaque(is_vs ? &vs_dtn_es_slot : &flcs_dtn_es_slot,
+                                 payload, len);
+                    break;
+
+                case HM_CBIT_MSG_ID_DTN_SW:
+                    store_opaque(is_vs ? &vs_dtn_sw_slot : &flcs_dtn_sw_slot,
+                                 payload, len);
+                    break;
+
+                default:
+                    __atomic_add_fetch(&g_hm_rx_unknown_msg, 1, __ATOMIC_RELAXED);
+                    break;
+            }
+            break;
+        }
+
+        // TODO: PBIT_RESPONSE (VLID 0x0a / 0x0d) aynı desenle eklenecek
         default:
             __atomic_add_fetch(&g_hm_rx_unknown_vlid, 1, __ATOMIC_RELAXED);
             break;
@@ -165,6 +300,61 @@ static bool drain_and_print_pcs_slot(hm_pcs_slot_t *slot, const char *device_nam
     return printed;
 }
 
+static bool drain_and_print_bm_eng_slot(hm_bm_slot_t *slot, const char *device_name)
+{
+    bool printed = false;
+    bm_engineering_cbit_report_t local;
+
+    pthread_mutex_lock(&slot->lock);
+    if (slot->updated) {
+        local = slot->data;
+        slot->updated = false;
+        printed = true;
+    }
+    pthread_mutex_unlock(&slot->lock);
+
+    if (printed) {
+        print_bm_cbit_report(&local, "BM ENGINEERING CBIT REPORT", device_name);
+    }
+    return printed;
+}
+
+// Opaque slot özet basımı: wire boyutu, timestamp, update sayısı ve ilk
+// 32 byte hex dump. Struct netleşince tam parse'a dönüştürülecek.
+static bool drain_and_summarize_opaque(hm_opaque_slot_t *slot,
+                                       const char *device_name,
+                                       const char *kind)
+{
+    bool printed = false;
+    uint8_t  buf[64];
+    uint16_t len    = 0;
+    uint64_t ts     = 0;
+    uint64_t count  = 0;
+
+    pthread_mutex_lock(&slot->lock);
+    if (slot->updated) {
+        len   = slot->last_len;
+        ts    = slot->last_timestamp;
+        count = slot->update_count;
+        uint16_t copy = len > sizeof(buf) ? sizeof(buf) : len;
+        memcpy(buf, slot->buf, copy);
+        slot->updated = false;
+        printed = true;
+    }
+    pthread_mutex_unlock(&slot->lock);
+
+    if (printed) {
+        printf("\n[%s][%s CBIT] size=%u B  ts=%lu  update#=%lu\n",
+               device_name, kind, len, (unsigned long)ts, (unsigned long)count);
+        printf("  first bytes:");
+        uint16_t shown = len > 32 ? 32 : len;
+        for (uint16_t i = 0; i < shown; i++) printf(" %02x", buf[i]);
+        if (len > shown) printf(" ...");
+        printf("\n");
+    }
+    return printed;
+}
+
 static void *hm_printer_thread_function(void *arg)
 {
     (void)arg;
@@ -174,21 +364,34 @@ static void *hm_printer_thread_function(void *arg)
         bool any = false;
         any |= drain_and_print_pcs_slot(&vs_cpu_usage_slot,   "VS");
         any |= drain_and_print_pcs_slot(&flcs_cpu_usage_slot, "FLCS");
-        // Diğer slot drain'leri (PBIT, CBIT) buraya eklenecek.
+
+        any |= drain_and_print_bm_eng_slot(&vs_bm_engineering_slot,   "VS");
+        any |= drain_and_print_bm_eng_slot(&flcs_bm_engineering_slot, "FLCS");
+
+        any |= drain_and_summarize_opaque(&vs_bm_flag_slot,   "VS",   "BM_FLAG");
+        any |= drain_and_summarize_opaque(&flcs_bm_flag_slot, "FLCS", "BM_FLAG");
+        any |= drain_and_summarize_opaque(&vs_dtn_es_slot,    "VS",   "DTN_ES");
+        any |= drain_and_summarize_opaque(&flcs_dtn_es_slot,  "FLCS", "DTN_ES");
+        any |= drain_and_summarize_opaque(&vs_dtn_sw_slot,    "VS",   "DTN_SW");
+        any |= drain_and_summarize_opaque(&flcs_dtn_sw_slot,  "FLCS", "DTN_SW");
 
         // Her saniye tanılama satırı bas (printer thread canlı mı + paket geliyor mu göster).
         // Böylece "hiç çıktı görmüyorum" durumunda bile thread'in çalıştığı net olur.
-        uint64_t total       = __atomic_load_n(&g_hm_rx_total,        __ATOMIC_RELAXED);
-        uint64_t vs_cnt      = __atomic_load_n(&g_hm_rx_vs_cpu,       __ATOMIC_RELAXED);
-        uint64_t flcs_cnt    = __atomic_load_n(&g_hm_rx_flcs_cpu,     __ATOMIC_RELAXED);
-        uint64_t unknown_cnt = __atomic_load_n(&g_hm_rx_unknown_vlid, __ATOMIC_RELAXED);
-        uint64_t short_cnt   = __atomic_load_n(&g_hm_rx_short,        __ATOMIC_RELAXED);
-        printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu unknown=%lu short=%lu printed_this_tick=%d\n",
+        uint64_t total        = __atomic_load_n(&g_hm_rx_total,        __ATOMIC_RELAXED);
+        uint64_t vs_cnt       = __atomic_load_n(&g_hm_rx_vs_cpu,       __ATOMIC_RELAXED);
+        uint64_t flcs_cnt     = __atomic_load_n(&g_hm_rx_flcs_cpu,     __ATOMIC_RELAXED);
+        uint64_t cbit_cnt     = __atomic_load_n(&g_hm_rx_cbit,         __ATOMIC_RELAXED);
+        uint64_t unknown_vlid = __atomic_load_n(&g_hm_rx_unknown_vlid, __ATOMIC_RELAXED);
+        uint64_t unknown_msg  = __atomic_load_n(&g_hm_rx_unknown_msg,  __ATOMIC_RELAXED);
+        uint64_t short_cnt    = __atomic_load_n(&g_hm_rx_short,        __ATOMIC_RELAXED);
+        printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu cbit=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
                (unsigned long)tick,
                (unsigned long)total,
                (unsigned long)vs_cnt,
                (unsigned long)flcs_cnt,
-               (unsigned long)unknown_cnt,
+               (unsigned long)cbit_cnt,
+               (unsigned long)unknown_vlid,
+               (unsigned long)unknown_msg,
                (unsigned long)short_cnt,
                any ? 1 : 0);
         fflush(stdout);

@@ -27,6 +27,13 @@
 #define HM_VL_ID_MIN 0x0009
 #define HM_VL_ID_MAX 0x0010
 
+// CBIT paketleri içindeki vmp_cmsw_header_t.message_identifier değerleri.
+// (VL-ID 11 / 14 aynı anda 4 farklı struct taşıyabiliyor; ayrım msg_id ile.)
+#define HM_CBIT_MSG_ID_DTN_ES         2
+#define HM_CBIT_MSG_ID_DTN_SW         3
+#define HM_CBIT_MSG_ID_BM_ENGINEERING 5
+#define HM_CBIT_MSG_ID_BM_FLAG        6
+
 static inline bool hm_is_health_monitor_vl_id(uint16_t vl_id)
 {
     return (vl_id >= HM_VL_ID_MIN && vl_id <= HM_VL_ID_MAX);
