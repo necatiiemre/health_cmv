@@ -1,3 +1,6 @@
+#ifndef VMC_MESSAGE_TYPES_H
+#define VMC_MESSAGE_TYPES_H
+
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -89,15 +92,7 @@ typedef struct __attribute__((packed))
     uint8_t bugfix;                         // Byte 417        | 1 byte
 } bm_cd_firmware_version_t;                 // TOPLAM: 4 byte
 
-typedef struct __attribute__((packed)) 
-{
-    uint8_t  message_identifier;            // Byte 0          | 1 byte
-    uint16_t message_len;                   // Byte 1 - 2      | 2 byte
-    uint64_t timestamp;                     // Byte 3 - 10     | 8 byte
-} vmp_cmsw_header_t;                        // TOPLAM: 11 byte
-
-
-typedef struct __attribute__((packed)) 
+typedef struct __attribute__((packed))
 {
     vmp_cmsw_header_t        header_st;                      // Byte 0   - 10   | 11 byte
     uint8_t                  lru_id;                         // Byte 11         | 1 byte
@@ -400,33 +395,38 @@ typedef struct __attribute__((packed))
 // ============================================================================
 
 // 4. CPU USAGE
-typedef struct __attribute__((packed)) Pcs_monitor_type
+// NOT: Pcs_monitor_type wire formatında natural alignment kullanılıyor
+// (percentage sonrası 7 byte padding, usage 8-byte aligned) → 16 byte.
+typedef struct Pcs_monitor_type
 {
     uint8_t  percentage;                                        // Byte 0          | 1 byte
-    uint64_t usage;                                             // Byte 1   - 8    | 8 byte
-} Pcs_monitor_type;                                             // TOPLAM: 9 byte
+    /* 7 byte padding (doğal 8-byte hizalama) */                //                 | 7 byte pad
+    uint64_t usage;                                             // Byte 8   - 15   | 8 byte
+} Pcs_monitor_type;                                             // TOPLAM: 16 byte
 
-typedef struct __attribute__((packed)) Pcs_cpu_exec_time_type
+typedef struct Pcs_cpu_exec_time_type
 {
-    Pcs_monitor_type min_exec_time;                             // Byte 0   - 8    | 9 byte
-    Pcs_monitor_type max_exec_time;                             // Byte 9   - 17   | 9 byte
-    Pcs_monitor_type avg_exec_time;                             // Byte 18  - 26   | 9 byte
-    Pcs_monitor_type last_exec_time;                            // Byte 27  - 35   | 9 byte
-} Pcs_cpu_exec_time_type;                                       // TOPLAM: 36 byte
+    Pcs_monitor_type min_exec_time;                             // Byte 0   - 15   | 16 byte
+    Pcs_monitor_type max_exec_time;                             // Byte 16  - 31   | 16 byte
+    Pcs_monitor_type avg_exec_time;                             // Byte 32  - 47   | 16 byte
+    Pcs_monitor_type last_exec_time;                            // Byte 48  - 63   | 16 byte
+} Pcs_cpu_exec_time_type;                                       // TOPLAM: 64 byte
 
-typedef struct __attribute__((packed)) Pcs_mem_profile_type
+typedef struct Pcs_mem_profile_type
 {
-    size_t total_size;                                          // Byte 0   - 7    | 8 byte  (size_t = 8 byte varsayımı)
-    size_t used_size;                                           // Byte 8   - 15   | 8 byte
-    size_t max_used_size;                                       // Byte 16  - 23   | 8 byte
+    uint64_t total_size;                                        // Byte 0   - 7    | 8 byte
+    uint64_t used_size;                                         // Byte 8   - 15   | 8 byte
+    uint64_t max_used_size;                                     // Byte 16  - 23   | 8 byte
 } Pcs_mem_profile_type;                                         // TOPLAM: 24 byte
 
-typedef struct __attribute__((packed)) Pcs_profile_stats
+typedef struct Pcs_profile_stats
 {
     uint64_t               sample_count;                        // Byte 0    - 7    | 8 byte
     uint64_t               latest_read_time;                    // Byte 8    - 15   | 8 byte
     uint64_t               total_run_time;                      // Byte 16   - 23   | 8 byte
-    Pcs_cpu_exec_time_type cpu_exec_time;                       // Byte 24   - 59   | 36 byte
-    Pcs_mem_profile_type   heap_mem;                            // Byte 60   - 83   | 24 byte
-    Pcs_mem_profile_type   stack_mem;                           // Byte 84   - 107  | 24 byte
-} Pcs_profile_stats;                                            // TOPLAM: 108 byte
+    Pcs_cpu_exec_time_type cpu_exec_time;                       // Byte 24   - 87   | 64 byte
+    Pcs_mem_profile_type   heap_mem;                            // Byte 88   - 111  | 24 byte
+    Pcs_mem_profile_type   stack_mem;                           // Byte 112  - 135  | 24 byte
+} Pcs_profile_stats;                                            // TOPLAM: 136 byte
+
+#endif /* VMC_MESSAGE_TYPES_H */

@@ -1499,25 +1499,18 @@ int rx_worker(void *arg)
                 //  Extract VL-ID from DST MAC (last 2 bytes)
                 uint16_t vl_id = extract_vl_id_from_packet(pkt, l2_len_vlan);
 
-// #if HEALTH_MONITOR_ENABLED
-                if (vl_id == HEALTH_MONITOR_FLCS_CBIT_VLID) 
+                // ==========================================
+                // HEALTH MONITOR EARLY BRANCH
+                // HM VL-ID'li paketler PRBS yoluna girmeden işlenir ve
+                // sayaçlara (good/bad/lost/oos vb.) hiç dokunulmaz.
+                // ==========================================
+                if (unlikely(hm_is_health_monitor_vl_id(vl_id)))
                 {
-                    
+                    uint16_t hm_len = (uint16_t)(m->pkt_len - payload_off);
+                    hm_handle_packet(vl_id, pkt + payload_off, hm_len);
+                    // mbuf batch-free ile (loop sonunda) serbest bırakılacak.
+                    continue;
                 }
-                else if (vl_id == HEALTH_MONITOR_VS_CBIT_VLID)
-                {
-
-                }
-                else if (vl_id == HEALTH_MONITOR_FLCS_PBIT_RESPONSE_VLID) 
-                {
-
-                }
-                else if (vl_id == HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID)
-                {
-                    
-                }
-                
-// #endif
                 // Get sequence number from payload
                 uint64_t seq = *(uint64_t *)(pkt + payload_off);
 
