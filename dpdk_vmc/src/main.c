@@ -18,6 +18,8 @@
 #include "TxRxManager.h"
 #include "AteMode.h"         // ATE test mode selection
 #include <health_monitor.h>  // HM printer thread start/stop
+#include "PsuTelemetry.h"          // wire format (shared with MainSoftware)
+#include "PsuTelemetryReceiver.h"  // receiver API for MainSoftware UDP pushes
 
 // Check if --daemon flag is present and remove it from argv
 // Returns true if --daemon was found, also updates argc
@@ -287,6 +289,18 @@ int main(int argc, char const *argv[])
         return -1;
     }
 
+    // Start PSU telemetry listener: receives 1 Hz V/I/W packets from
+    // MainSoftware and makes them available to health dashboard print cycle.
+    // Non-fatal on failure.
+    if (psu_telem_init(PSU_TELEM_PORT) == 0) {
+        if (psu_telem_start(&force_quit) != 0) {
+            printf("Warning: PSU telemetry listener failed to start\n");
+        }
+    } else {
+        printf("Warning: PSU telemetry listener init failed (port %u busy?)\n",
+               (unsigned)PSU_TELEM_PORT);
+    }
+
     printf("\n=== Running (Press Ctrl+C to stop) ===\n");
     printf("  WARM-UP PHASE: First 60 seconds (stats will reset)\n\n");
 
@@ -371,6 +385,9 @@ int main(int argc, char const *argv[])
     }
 
     printf("\n=== Shutting down ===\n");
+
+    // Stop PSU telemetry listener (idempotent - safe if never started).
+    psu_telem_stop();
 
     printf("Waiting 5 seconds for RX counters to flush...\n");
     sleep(15);

@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <errno.h>
+#include "PsuTelemetryReceiver.h"
 
 // ============================================================================
 // Slot altyapısı
@@ -577,6 +578,11 @@ void hm_print_dashboard(void)
            (unsigned long)unknown_msg,
            (unsigned long)short_cnt,
            any ? 1 : 0);
+
+    // PSU telemetry is pushed from MainSoftware via UDP.
+    // Print it in the same health-monitor cycle for unified visibility.
+    psu_telem_print_table();
+
     fflush(stdout);
     tick++;
 }
