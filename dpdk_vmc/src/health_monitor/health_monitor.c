@@ -73,10 +73,7 @@ static hm_bm_flag_slot_t  flcs_bm_flag_slot        = {.lock = PTHREAD_MUTEX_INIT
 static hm_dtn_es_slot_t   flcs_dtn_es_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
 static hm_dtn_sw_slot_t   flcs_dtn_sw_slot         = {.lock = PTHREAD_MUTEX_INITIALIZER};
 
-// Printer thread durumu
-static pthread_t        g_printer_thread;
-static volatile bool   *g_stop_flag = NULL;
-static volatile bool    g_printer_running = false;
+// (Önceden printer için pthread state vardı; dashboard artık main thread'de.)
 
 // Debug/diagnostic sayaçları (atomic artırılır, lock gerekmez)
 static volatile uint64_t g_hm_rx_total        = 0;  // hm_handle_packet çağrı sayısı
@@ -529,85 +526,59 @@ static bool drain_and_print_dtn_sw_slot(hm_dtn_sw_slot_t *slot, const char *devi
     return has_data;
 }
 
-static void *hm_printer_thread_function(void *arg)
+// ============================================================================
+// Public dashboard — main thread içinden her saniye çağrılır.
+// Stats tablosundan sonra çalıştırıldığında çıktı sıralı akar.
+// ============================================================================
+void hm_print_dashboard(void)
 {
-    (void)arg;
-    uint64_t tick = 0;
-    while (g_stop_flag == NULL || !(*g_stop_flag))
-    {
-        // Dashboard cycle header — her saniyenin başlangıcını net işaretler
-        printf("\n\n");
-        printf("########################################################################################\n");
-        printf("###  HEALTH MONITOR DASHBOARD — tick %-6lu                                            ###\n",
-               (unsigned long)tick);
-        printf("########################################################################################\n");
+    static uint64_t tick = 0;
 
-        bool any = false;
-        any |= drain_and_print_pcs_slot(&vs_cpu_usage_slot,   "VS");
-        any |= drain_and_print_pcs_slot(&flcs_cpu_usage_slot, "FLCS");
+    // Dashboard cycle header — her saniyenin başlangıcını net işaretler
+    printf("\n\n");
+    printf("########################################################################################\n");
+    printf("###  HEALTH MONITOR DASHBOARD — tick %-6lu                                            ###\n",
+           (unsigned long)tick);
+    printf("########################################################################################\n");
 
-        any |= drain_and_print_bm_eng_slot(&vs_bm_engineering_slot,   "VS");
-        any |= drain_and_print_bm_eng_slot(&flcs_bm_engineering_slot, "FLCS");
+    bool any = false;
+    any |= drain_and_print_pcs_slot(&vs_cpu_usage_slot,   "VS");
+    any |= drain_and_print_pcs_slot(&flcs_cpu_usage_slot, "FLCS");
 
-        any |= drain_and_print_bm_flag_slot(&vs_bm_flag_slot,   "VS");
-        any |= drain_and_print_bm_flag_slot(&flcs_bm_flag_slot, "FLCS");
+    any |= drain_and_print_bm_eng_slot(&vs_bm_engineering_slot,   "VS");
+    any |= drain_and_print_bm_eng_slot(&flcs_bm_engineering_slot, "FLCS");
 
-        any |= drain_and_print_dtn_es_slot(&vs_dtn_es_slot,   "VS");
-        any |= drain_and_print_dtn_es_slot(&flcs_dtn_es_slot, "FLCS");
+    any |= drain_and_print_bm_flag_slot(&vs_bm_flag_slot,   "VS");
+    any |= drain_and_print_bm_flag_slot(&flcs_bm_flag_slot, "FLCS");
 
-        any |= drain_and_print_dtn_sw_slot(&vs_dtn_sw_slot,   "VS");
-        any |= drain_and_print_dtn_sw_slot(&flcs_dtn_sw_slot, "FLCS");
+    any |= drain_and_print_dtn_es_slot(&vs_dtn_es_slot,   "VS");
+    any |= drain_and_print_dtn_es_slot(&flcs_dtn_es_slot, "FLCS");
 
-        // Her saniye tanılama satırı bas (printer thread canlı mı + paket geliyor mu göster).
-        // Böylece "hiç çıktı görmüyorum" durumunda bile thread'in çalıştığı net olur.
-        uint64_t total        = __atomic_load_n(&g_hm_rx_total,        __ATOMIC_RELAXED);
-        uint64_t vs_cnt       = __atomic_load_n(&g_hm_rx_vs_cpu,       __ATOMIC_RELAXED);
-        uint64_t flcs_cnt     = __atomic_load_n(&g_hm_rx_flcs_cpu,     __ATOMIC_RELAXED);
-        uint64_t cbit_cnt     = __atomic_load_n(&g_hm_rx_cbit,         __ATOMIC_RELAXED);
-        uint64_t unknown_vlid = __atomic_load_n(&g_hm_rx_unknown_vlid, __ATOMIC_RELAXED);
-        uint64_t unknown_msg  = __atomic_load_n(&g_hm_rx_unknown_msg,  __ATOMIC_RELAXED);
-        uint64_t short_cnt    = __atomic_load_n(&g_hm_rx_short,        __ATOMIC_RELAXED);
-        uint64_t empty_cnt    = __atomic_load_n(&g_hm_rx_empty,        __ATOMIC_RELAXED);
-        printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu cbit=%lu empty=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
-               (unsigned long)tick,
-               (unsigned long)total,
-               (unsigned long)vs_cnt,
-               (unsigned long)flcs_cnt,
-               (unsigned long)cbit_cnt,
-               (unsigned long)empty_cnt,
-               (unsigned long)unknown_vlid,
-               (unsigned long)unknown_msg,
-               (unsigned long)short_cnt,
-               any ? 1 : 0);
-        fflush(stdout);
-        tick++;
+    any |= drain_and_print_dtn_sw_slot(&vs_dtn_sw_slot,   "VS");
+    any |= drain_and_print_dtn_sw_slot(&flcs_dtn_sw_slot, "FLCS");
 
-        usleep(HEALTH_MONITOR_DASHBOARD_INTERVAL_MS * 1000u);
-    }
-    return NULL;
-}
-
-int hm_start_printer_thread(volatile bool *stop_flag)
-{
-    if (g_printer_running) return 0;
-    g_stop_flag = stop_flag;
-    int ret = pthread_create(&g_printer_thread, NULL, hm_printer_thread_function, NULL);
-    if (ret != 0) {
-        fprintf(stderr, "hm_start_printer_thread: pthread_create failed: %s\n", strerror(ret));
-        return -1;
-    }
-    g_printer_running = true;
-    printf("[HM] Health monitor printer thread started (interval=%d ms)\n",
-           HEALTH_MONITOR_DASHBOARD_INTERVAL_MS);
-    return 0;
-}
-
-void hm_stop_printer_thread(void)
-{
-    if (!g_printer_running) return;
-    pthread_join(g_printer_thread, NULL);
-    g_printer_running = false;
-    printf("[HM] Health monitor printer thread stopped\n");
+    // Her tick sonunda tanı satırı — sayaçlar + paket gelip gelmediği net.
+    uint64_t total        = __atomic_load_n(&g_hm_rx_total,        __ATOMIC_RELAXED);
+    uint64_t vs_cnt       = __atomic_load_n(&g_hm_rx_vs_cpu,       __ATOMIC_RELAXED);
+    uint64_t flcs_cnt     = __atomic_load_n(&g_hm_rx_flcs_cpu,     __ATOMIC_RELAXED);
+    uint64_t cbit_cnt     = __atomic_load_n(&g_hm_rx_cbit,         __ATOMIC_RELAXED);
+    uint64_t unknown_vlid = __atomic_load_n(&g_hm_rx_unknown_vlid, __ATOMIC_RELAXED);
+    uint64_t unknown_msg  = __atomic_load_n(&g_hm_rx_unknown_msg,  __ATOMIC_RELAXED);
+    uint64_t short_cnt    = __atomic_load_n(&g_hm_rx_short,        __ATOMIC_RELAXED);
+    uint64_t empty_cnt    = __atomic_load_n(&g_hm_rx_empty,        __ATOMIC_RELAXED);
+    printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu cbit=%lu empty=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
+           (unsigned long)tick,
+           (unsigned long)total,
+           (unsigned long)vs_cnt,
+           (unsigned long)flcs_cnt,
+           (unsigned long)cbit_cnt,
+           (unsigned long)empty_cnt,
+           (unsigned long)unknown_vlid,
+           (unsigned long)unknown_msg,
+           (unsigned long)short_cnt,
+           any ? 1 : 0);
+    fflush(stdout);
+    tick++;
 }
 
 // ============================================================================

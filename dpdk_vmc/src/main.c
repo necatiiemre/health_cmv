@@ -287,11 +287,6 @@ int main(int argc, char const *argv[])
         return -1;
     }
 
-    // Start health monitor printer (pthread, lcore harcamaz)
-    if (hm_start_printer_thread(&force_quit) != 0) {
-        printf("Warning: health monitor printer thread failed to start\n");
-    }
-
     printf("\n=== Running (Press Ctrl+C to stop) ===\n");
     printf("  WARM-UP PHASE: First 60 seconds (stats will reset)\n\n");
 
@@ -347,6 +342,9 @@ int main(int argc, char const *argv[])
         helper_print_stats(&ports_config, prev_tx_bytes, prev_rx_bytes,
                            warmup_complete, loop_count, test_time);
 
+        // Health monitor dashboard — stats tablosundan hemen sonra, sıralı akış
+        hm_print_dashboard();
+
         fflush(stdout);  // Ensure output is visible on remote/main computer
 
         // Update prev_* for the NEXT second: (cumulative HW byte counters)
@@ -376,9 +374,6 @@ int main(int argc, char const *argv[])
 
     printf("Waiting 5 seconds for RX counters to flush...\n");
     sleep(15);
-
-    // Stop health monitor printer before DPDK teardown
-    hm_stop_printer_thread();
 
     // Wait for all DPDK workers to stop
     rte_eal_mp_wait_lcore();
