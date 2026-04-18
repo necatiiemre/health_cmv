@@ -689,29 +689,84 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
     printf("========================================================================================\n");
 }
 
-// 2b. BM FLAG — 105 B. Gövdesi BM Engineering alt-struct'larına karşılık
-// gelen flag byte'ları gibi davranıyor (her float için 1 byte flag varsayımı).
-// BM Engineering: 22 + 22 + 15 + 15 + 15 + 7 = 96 float. BM Flag payload 93 B.
-// 3 byte fark muhtemelen VMC Board bölümünde; kesinleşene kadar 4 B olarak
-// kesiyoruz ve bölümleri isimli basıyoruz — VMC tarafıyla senkronize olunca
-// sabit yerinde düzeltilir.
-static void print_flag_section(const char *title,
-                               const uint8_t *bytes, size_t count, size_t base)
+// 2b. BM FLAG — 105 B. Her flag byte'ı BM Engineering'deki ilgili float
+// alanının durum bayrağı. İsimler BM Engineering struct'ından birebir.
+// BM Engineering toplam 96 float, BM Flag payload 93 byte → VMC Board
+// kısmı ilk 4 alanla sınırlandırıldı (spec gelince tamamlanacak).
+
+static const char * const BM_FLAG_NAMES_VS_CPU[22] = {
+    "VSCPU_12V_current",           "VSCPU_core_imon",
+    "VSCPU_3v3_rail_input_current","VSCPU_G1VDD_input_current",
+    "VSCPU_XVDD_input_current",    "VSCPU_SVDD_input_current",
+    "VSCPU_G1VDD_1v35_rail_voltage","VSCPU_BM_ADC_3V_1",
+    "VSCPU_1v8_rail_voltage",      "VSCPU_VCORE_rail_voltage",
+    "VSCPU_S1VDD_rail_voltage",    "VSCPU_S2VDD_rail_voltage",
+    "VSCPU_X1VDD_rail_voltage",    "VSCPU_X2VDD_rail_voltage",
+    "VSCPU_12V_main_voltage",      "VSCPU_BM_ADC_3V_2",
+    "VSCPU_1v8_rail_input_current","VSCPU_core_local_temperature",
+    "VSCPU_core_remote_temperature","VSCPU_RAM_temperature",
+    "VSCPU_FLASH_temperature",     "VSCPU_power_IC_temperature",
+};
+static const char * const BM_FLAG_NAMES_FLCS_CPU[22] = {
+    "FCCPU_12V_current",           "FCCPU_core_imon",
+    "FCCPU_3v3_rail_input_current","FCCPU_G1VDD_input_current",
+    "FCCPU_XVDD_input_current",    "FCCPU_SVDD_input_current",
+    "FCCPU_G1VDD_1v35_rail_voltage","FCCPU_BM_ADC_3V_1",
+    "FCCPU_1v8_rail_voltage",      "FCCPU_VCORE_rail_voltage",
+    "FCCPU_S1VDD_rail_voltage",    "FCCPU_S2VDD_rail_voltage",
+    "FCCPU_X1VDD_rail_voltage",    "FCCPU_X2VDD_rail_voltage",
+    "FCCPU_12V_main_voltage",      "FCCPU_BM_ADC_3V_2",
+    "FCCPU_core_local_temperature","FCCPU_core_remote_temperature",
+    "FCCPU_RAM_temperature",       "FCCPU_FLASH_temperature",
+    "FCCPU_1v8_input_current",     "FCCPU_power_IC_temperature",
+};
+static const char * const BM_FLAG_NAMES_DTN_ES[15] = {
+    "DTN_ES_VDD_input_current",    "DTN_ES_3v3_rail_input_current",
+    "DTN_ES_FO_RX_imon_r",         "DTN_ES_1v8_rail_input_current",
+    "DTN_ES_1v3_rail_input_current","DTN_ES_12V_main_current",
+    "DTN_ES_BM_3V_1",              "DTN_ES_1V_VDD_rail_voltage",
+    "DTN_ES_2v5_rail_voltage",     "DTN_ES_1v8_rail_voltage",
+    "DTN_ES_1V_VDDA_rail_voltage", "DTN_ES_3v3_VDDIX_rail_voltage",
+    "DTN_ES_2v5_rail_input_current","DTN_ES_12V_main_voltage",
+    "DTN_ES_BM_3V_2",
+};
+static const char * const BM_FLAG_NAMES_DTN_VSW[15] = {
+    "DTN_VSW_VDD_input_current",   "DTN_VSW_3v3_rail_input_current",
+    "DTN_VSW_FO_V_RX_imon_r",      "DTN_VSW_1v8_rail_input_current",
+    "DTN_VSW_1v3_rail_input_current","DTN_VSW_12V_main_current",
+    "DTN_VSW_BM_ADC_3V_1",         "DTN_VSW_1V_VDD_rail_voltage",
+    "DTN_VSW_2v5_rail_voltage",    "DTN_VSW_1v8_rail_voltage",
+    "DTN_VSW_1V_VDDA_rail_voltage","DTN_VSW_2v5_rail_input_current",
+    "DTN_VSW_12V_main_voltage",    "DTN_VSW_FO_VF_RX_imon_r",
+    "DTN_VSW_3v3_VDDIX_voltage",
+};
+static const char * const BM_FLAG_NAMES_DTN_FSW[15] = {
+    "DTN_FSW_VDD_input_current",   "DTN_FSW_3v3_rail_input_current",
+    "DTN_FSW_FO_F_RX_imon_r",      "DTN_FSW_1v8_rail_input_current",
+    "DTN_FSW_1v3_rail_input_current","DTN_FSW_12V_main_current",
+    "DTN_FSW_BM_ADC_3V_1",         "DTN_FSW_1V_VDD_rail_voltage",
+    "DTN_FSW_2v5_rail_voltage",    "DTN_FSW_1v8_rail_voltage",
+    "DTN_FSW_1V_VDDA_rail_voltage","DTN_FSW_3v3_VDDIX_rail_voltage",
+    "DTN_FSW_2v5_rail_input_current","DTN_FSW_12V_main_voltage",
+    "DTN_FSW_BM_ADC_3V_2",
+};
+// VMC Board'un ilk 4 alanı (flag payload'unda sadece 4 byte var).
+static const char * const BM_FLAG_NAMES_VMC_BOARD[4] = {
+    "PSM_PWR_PRI_VOLS", "PSM_PWR_SEC_VOLS",
+    "PSM_INPUT_CURS",   "PSM_TEMP",
+};
+
+static void print_named_flag_section(const char *title,
+                                     const char * const *names,
+                                     const uint8_t *bytes,
+                                     size_t count, size_t base)
 {
     printf("\n[ %s ]  (%zu bytes, payload offset %zu..%zu)\n",
            title, count, base, base + count - 1);
-    printf(" IDX | VAL  | BYTE OFF   | IDX | VAL  | BYTE OFF\n");
-    printf("-----|------|------------|-----|------|-----------\n");
-    size_t half = (count + 1) / 2;
-    for (size_t i = 0; i < half; i++) {
-        size_t j = i + half;
-        if (j < count) {
-            printf(" %3zu | 0x%02x | +%-8zu | %3zu | 0x%02x | +%zu\n",
-                   i, bytes[i], base + i, j, bytes[j], base + j);
-        } else {
-            printf(" %3zu | 0x%02x | +%-8zu |     |      |\n",
-                   i, bytes[i], base + i);
-        }
+    printf(" %-34s | FLAG | OFF\n", "FIELD");
+    printf("------------------------------------|------|------\n");
+    for (size_t i = 0; i < count; i++) {
+        printf(" %-34s | 0x%02x | +%zu\n", names[i], bytes[i], base + i);
     }
 }
 
@@ -731,15 +786,13 @@ void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *de
            (unsigned long)data->header_st.timestamp, data->lru_id);
 
     const uint8_t *p = data->payload;
-
-    // Bölmeler: BM Engineering alt-struct sıralaması ile aynı
-    //   VS_CPU(22) | FLCS_CPU(22) | DTN_ES(15) | DTN_VSW(15) | DTN_FSW(15) | VMC_BOARD(4) = 93
-    print_flag_section("VS CPU FLAGS",    p +  0, 22,  0);
-    print_flag_section("FLCS CPU FLAGS",  p + 22, 22, 22);
-    print_flag_section("DTN ES FLAGS",    p + 44, 15, 44);
-    print_flag_section("DTN VSW FLAGS",   p + 59, 15, 59);
-    print_flag_section("DTN FSW FLAGS",   p + 74, 15, 74);
-    print_flag_section("VMC BOARD FLAGS", p + 89,  4, 89);
+    // VS_CPU(22) | FLCS_CPU(22) | DTN_ES(15) | DTN_VSW(15) | DTN_FSW(15) | VMC_BOARD(4) = 93
+    print_named_flag_section("VS CPU FLAGS",    BM_FLAG_NAMES_VS_CPU,    p +  0, 22,  0);
+    print_named_flag_section("FLCS CPU FLAGS",  BM_FLAG_NAMES_FLCS_CPU,  p + 22, 22, 22);
+    print_named_flag_section("DTN ES FLAGS",    BM_FLAG_NAMES_DTN_ES,    p + 44, 15, 44);
+    print_named_flag_section("DTN VSW FLAGS",   BM_FLAG_NAMES_DTN_VSW,   p + 59, 15, 59);
+    print_named_flag_section("DTN FSW FLAGS",   BM_FLAG_NAMES_DTN_FSW,   p + 74, 15, 74);
+    print_named_flag_section("VMC BOARD FLAGS", BM_FLAG_NAMES_VMC_BOARD, p + 89,  4, 89);
 
     printf("========================================================================================\n");
 }
