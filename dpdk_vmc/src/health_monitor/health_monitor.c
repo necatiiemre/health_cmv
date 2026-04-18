@@ -689,9 +689,32 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
     printf("========================================================================================\n");
 }
 
-// 2b. BM FLAG — 105 B. İç yapı VMC tarafında dokümanlanana kadar tabloyu
-// "header + 93B flag bloğu"nun ofset-tabanlı tablosu olarak gösteriyoruz.
-// Non-zero offsetler için kısa özet satırı da düşüyor.
+// 2b. BM FLAG — 105 B. Gövdesi BM Engineering alt-struct'larına karşılık
+// gelen flag byte'ları gibi davranıyor (her float için 1 byte flag varsayımı).
+// BM Engineering: 22 + 22 + 15 + 15 + 15 + 7 = 96 float. BM Flag payload 93 B.
+// 3 byte fark muhtemelen VMC Board bölümünde; kesinleşene kadar 4 B olarak
+// kesiyoruz ve bölümleri isimli basıyoruz — VMC tarafıyla senkronize olunca
+// sabit yerinde düzeltilir.
+static void print_flag_section(const char *title,
+                               const uint8_t *bytes, size_t count, size_t base)
+{
+    printf("\n[ %s ]  (%zu bytes, payload offset %zu..%zu)\n",
+           title, count, base, base + count - 1);
+    printf(" IDX | VAL  | BYTE OFF   | IDX | VAL  | BYTE OFF\n");
+    printf("-----|------|------------|-----|------|-----------\n");
+    size_t half = (count + 1) / 2;
+    for (size_t i = 0; i < half; i++) {
+        size_t j = i + half;
+        if (j < count) {
+            printf(" %3zu | 0x%02x | +%-8zu | %3zu | 0x%02x | +%zu\n",
+                   i, bytes[i], base + i, j, bytes[j], base + j);
+        } else {
+            printf(" %3zu | 0x%02x | +%-8zu |     |      |\n",
+                   i, bytes[i], base + i);
+        }
+    }
+}
+
 void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *device_name)
 {
     if (!data) return;
@@ -707,19 +730,17 @@ void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *de
     printf(" Timestamp    : %-18lu | LRU ID       : %u\n",
            (unsigned long)data->header_st.timestamp, data->lru_id);
 
-    printf("\n[ FLAG BLOCK (93 B, offsets within flag payload) ]\n");
-    printf(" OFFSET | BYTES                                           | NOTES\n");
-    printf("--------|-------------------------------------------------|----------------------\n");
-    for (size_t i = 0; i < sizeof(data->payload); i += 16) {
-        // satırın hex'i
-        char hexbuf[64]; size_t hp = 0;
-        int nz = 0;
-        for (size_t j = 0; j < 16 && i + j < sizeof(data->payload); j++) {
-            hp += (size_t)snprintf(hexbuf + hp, sizeof(hexbuf) - hp, "%02x ", data->payload[i + j]);
-            if (data->payload[i + j] != 0) nz++;
-        }
-        printf("  +%3zu  | %-47s | %s\n", i, hexbuf, nz ? "has non-zero bytes" : "(all zero)");
-    }
+    const uint8_t *p = data->payload;
+
+    // Bölmeler: BM Engineering alt-struct sıralaması ile aynı
+    //   VS_CPU(22) | FLCS_CPU(22) | DTN_ES(15) | DTN_VSW(15) | DTN_FSW(15) | VMC_BOARD(4) = 93
+    print_flag_section("VS CPU FLAGS",    p +  0, 22,  0);
+    print_flag_section("FLCS CPU FLAGS",  p + 22, 22, 22);
+    print_flag_section("DTN ES FLAGS",    p + 44, 15, 44);
+    print_flag_section("DTN VSW FLAGS",   p + 59, 15, 59);
+    print_flag_section("DTN FSW FLAGS",   p + 74, 15, 74);
+    print_flag_section("VMC BOARD FLAGS", p + 89,  4, 89);
+
     printf("========================================================================================\n");
 }
 
