@@ -455,76 +455,78 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
 
 // ============================================================================
 // Printer thread — 1 Hz dashboard
+// ----------------------------------------------------------------------------
+// Her tick'te SLOT BAŞINA en son veriyi bas — "updated" bayrağı "en az bir kez
+// veri geldi mi?" anlamında kullanılıyor; bayrak tick'ler arasında temizlenmez.
+// Böylece paket gelmediği saniyelerde bile son güncel snapshot ekrana gelir.
 // ============================================================================
 static bool drain_and_print_pcs_slot(hm_pcs_slot_t *slot, const char *device_name)
 {
-    bool printed = false;
+    bool has_data = false;
     Pcs_profile_stats local;
 
     pthread_mutex_lock(&slot->lock);
     if (slot->updated) {
         local = slot->data;
-        slot->updated = false;
-        printed = true;
+        has_data = true;
     }
     pthread_mutex_unlock(&slot->lock);
 
-    if (printed) {
+    if (has_data) {
         print_pcs_profile_stats(&local, device_name);
     }
-    return printed;
+    return has_data;
 }
 
 static bool drain_and_print_bm_eng_slot(hm_bm_slot_t *slot, const char *device_name)
 {
-    bool printed = false;
+    bool has_data = false;
     bm_engineering_cbit_report_t local;
 
     pthread_mutex_lock(&slot->lock);
     if (slot->updated) {
         local = slot->data;
-        slot->updated = false;
-        printed = true;
+        has_data = true;
     }
     pthread_mutex_unlock(&slot->lock);
 
-    if (printed) {
+    if (has_data) {
         print_bm_cbit_report(&local, "BM ENGINEERING CBIT REPORT", device_name);
     }
-    return printed;
+    return has_data;
 }
 
 static bool drain_and_print_bm_flag_slot(hm_bm_flag_slot_t *slot, const char *device_name)
 {
-    bool printed = false;
+    bool has_data = false;
     bm_flag_cbit_report_t local;
     pthread_mutex_lock(&slot->lock);
-    if (slot->updated) { local = slot->data; slot->updated = false; printed = true; }
+    if (slot->updated) { local = slot->data; has_data = true; }
     pthread_mutex_unlock(&slot->lock);
-    if (printed) print_bm_flag_cbit_report(&local, device_name);
-    return printed;
+    if (has_data) print_bm_flag_cbit_report(&local, device_name);
+    return has_data;
 }
 
 static bool drain_and_print_dtn_es_slot(hm_dtn_es_slot_t *slot, const char *device_name)
 {
-    bool printed = false;
+    bool has_data = false;
     dtn_es_cbit_report_t local;
     pthread_mutex_lock(&slot->lock);
-    if (slot->updated) { local = slot->data; slot->updated = false; printed = true; }
+    if (slot->updated) { local = slot->data; has_data = true; }
     pthread_mutex_unlock(&slot->lock);
-    if (printed) print_dtn_es_cbit_report(&local, device_name);
-    return printed;
+    if (has_data) print_dtn_es_cbit_report(&local, device_name);
+    return has_data;
 }
 
 static bool drain_and_print_dtn_sw_slot(hm_dtn_sw_slot_t *slot, const char *device_name)
 {
-    bool printed = false;
+    bool has_data = false;
     dtn_sw_cbit_report_t local;
     pthread_mutex_lock(&slot->lock);
-    if (slot->updated) { local = slot->data; slot->updated = false; printed = true; }
+    if (slot->updated) { local = slot->data; has_data = true; }
     pthread_mutex_unlock(&slot->lock);
-    if (printed) print_dtn_sw_cbit_report(&local, device_name);
-    return printed;
+    if (has_data) print_dtn_sw_cbit_report(&local, device_name);
+    return has_data;
 }
 
 static void *hm_printer_thread_function(void *arg)
@@ -533,6 +535,13 @@ static void *hm_printer_thread_function(void *arg)
     uint64_t tick = 0;
     while (g_stop_flag == NULL || !(*g_stop_flag))
     {
+        // Dashboard cycle header — her saniyenin başlangıcını net işaretler
+        printf("\n\n");
+        printf("########################################################################################\n");
+        printf("###  HEALTH MONITOR DASHBOARD — tick %-6lu                                            ###\n",
+               (unsigned long)tick);
+        printf("########################################################################################\n");
+
         bool any = false;
         any |= drain_and_print_pcs_slot(&vs_cpu_usage_slot,   "VS");
         any |= drain_and_print_pcs_slot(&flcs_cpu_usage_slot, "FLCS");
