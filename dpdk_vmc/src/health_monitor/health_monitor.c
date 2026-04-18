@@ -649,43 +649,156 @@ void print_vmc_pbit_report(const vmc_pbit_data_t *data, const char *device_name)
     printf("========================================================================================\n");
 }
 
-// 2. BM ENGINEERING / FLAG DATA CBIT REPORT
+// 2. BM ENGINEERING / FLAG DATA CBIT REPORT — tüm 96 float alanı basılır
+static void bm_section_header(const char *title)
+{
+    printf("\n+------------------------------------------------+------------+\n");
+    printf("| %-47s|   VALUE    |\n", title);
+    printf("+------------------------------------------------+------------+\n");
+}
+static void bm_row(const char *name, float v)
+{
+    printf("| %-47s| %10.4f |\n", name, v);
+}
+static void bm_section_footer(void)
+{
+    printf("+------------------------------------------------+------------+\n");
+}
+
 void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *report_title, const char *device_name)
 {
     if (!data) return;
-
     const char *prefix = (device_name != NULL) ? device_name : "UNKNOWN";
 
     printf("\n========================================================================================\n");
     printf("                   [%s] %s                      \n", prefix, report_title);
     printf("========================================================================================\n");
-
     printf("[ GENERAL ]\n");
-    printf(" LRU ID      : %u\n", data->lru_id);
-    printf(" Comm Status : %u\n", data->comm_status);
+    printf(" Msg ID       : %-18u | Msg Len      : %u\n",
+           data->header_st.message_identifier, data->header_st.message_len);
+    printf(" Timestamp    : %-18lu | LRU ID       : %u\n",
+           (unsigned long)data->header_st.timestamp, data->lru_id);
+    printf(" Comm Status  : %u\n", data->comm_status);
 
-    printf("\n[ VS CPU STATUS DATA ]\n");
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "12V Current", data->vs_status_st.VSCPU_12V_current, "Core Imon", data->vs_status_st.VSCPU_core_imon);
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "3v3 Rail Input Curr", data->vs_status_st.VSCPU_3v3_rail_input_current, "G1VDD Input Curr", data->vs_status_st.VSCPU_G1VDD_input_current);
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "12V Main Voltage", data->vs_status_st.VSCPU_12V_main_voltage, "Core Local Temp", data->vs_status_st.VSCPU_core_local_temperature);
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "RAM Temp", data->vs_status_st.VSCPU_RAM_temperature, "FLASH Temp", data->vs_status_st.VSCPU_FLASH_temperature);
+    const bm_vs_cpu_status_data_t *v = &data->vs_status_st;
+    bm_section_header("VS CPU STATUS DATA (22 fields)");
+    bm_row("VSCPU_12V_current",                v->VSCPU_12V_current);
+    bm_row("VSCPU_core_imon",                  v->VSCPU_core_imon);
+    bm_row("VSCPU_3v3_rail_input_current",     v->VSCPU_3v3_rail_input_current);
+    bm_row("VSCPU_G1VDD_input_current",        v->VSCPU_G1VDD_input_current);
+    bm_row("VSCPU_XVDD_input_current",         v->VSCPU_XVDD_input_current);
+    bm_row("VSCPU_SVDD_input_current",         v->VSCPU_SVDD_input_current);
+    bm_row("VSCPU_G1VDD_1v35_rail_voltage",    v->VSCPU_G1VDD_1v35_rail_voltage);
+    bm_row("VSCPU_BM_ADC_3V_1",                v->VSCPU_BM_ADC_3V_1);
+    bm_row("VSCPU_1v8_rail_voltage",           v->VSCPU_1v8_rail_voltage);
+    bm_row("VSCPU_VCORE_rail_voltage",         v->VSCPU_VCORE_rail_voltage);
+    bm_row("VSCPU_S1VDD_rail_voltage",         v->VSCPU_S1VDD_rail_voltage);
+    bm_row("VSCPU_S2VDD_rail_voltage",         v->VSCPU_S2VDD_rail_voltage);
+    bm_row("VSCPU_X1VDD_rail_voltage",         v->VSCPU_X1VDD_rail_voltage);
+    bm_row("VSCPU_X2VDD_rail_voltage",         v->VSCPU_X2VDD_rail_voltage);
+    bm_row("VSCPU_12V_main_voltage",           v->VSCPU_12V_main_voltage);
+    bm_row("VSCPU_BM_ADC_3V_2",                v->VSCPU_BM_ADC_3V_2);
+    bm_row("VSCPU_1v8_rail_input_current",     v->VSCPU_1v8_rail_input_current);
+    bm_row("VSCPU_core_local_temperature",     v->VSCPU_core_local_temperature);
+    bm_row("VSCPU_core_remote_temperature",    v->VSCPU_core_remote_temperature);
+    bm_row("VSCPU_RAM_temperature",            v->VSCPU_RAM_temperature);
+    bm_row("VSCPU_FLASH_temperature",          v->VSCPU_FLASH_temperature);
+    bm_row("VSCPU_power_IC_temperature",       v->VSCPU_power_IC_temperature);
+    bm_section_footer();
 
-    printf("\n[ FLCS CPU STATUS DATA ]\n");
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "12V Current", data->flcs_status_st.FCCPU_12V_current, "Core Imon", data->flcs_status_st.FCCPU_core_imon);
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "12V Main Voltage", data->flcs_status_st.FCCPU_12V_main_voltage, "Core Local Temp", data->flcs_status_st.FCCPU_core_local_temperature);
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "RAM Temp", data->flcs_status_st.FCCPU_RAM_temperature, "FLASH Temp", data->flcs_status_st.FCCPU_FLASH_temperature);
+    const bm_flcs_cpu_status_data_t *f = &data->flcs_status_st;
+    bm_section_header("FLCS CPU STATUS DATA (22 fields)");
+    bm_row("FCCPU_12V_current",                f->FCCPU_12V_current);
+    bm_row("FCCPU_core_imon",                  f->FCCPU_core_imon);
+    bm_row("FCCPU_3v3_rail_input_current",     f->FCCPU_3v3_rail_input_current);
+    bm_row("FCCPU_G1VDD_input_current",        f->FCCPU_G1VDD_input_current);
+    bm_row("FCCPU_XVDD_input_current",         f->FCCPU_XVDD_input_current);
+    bm_row("FCCPU_SVDD_input_current",         f->FCCPU_SVDD_input_current);
+    bm_row("FCCPU_G1VDD_1v35_rail_voltage",    f->FCCPU_G1VDD_1v35_rail_voltage);
+    bm_row("FCCPU_BM_ADC_3V_1",                f->FCCPU_BM_ADC_3V_1);
+    bm_row("FCCPU_1v8_rail_voltage",           f->FCCPU_1v8_rail_voltage);
+    bm_row("FCCPU_VCORE_rail_voltage",         f->FCCPU_VCORE_rail_voltage);
+    bm_row("FCCPU_S1VDD_rail_voltage",         f->FCCPU_S1VDD_rail_voltage);
+    bm_row("FCCPU_S2VDD_rail_voltage",         f->FCCPU_S2VDD_rail_voltage);
+    bm_row("FCCPU_X1VDD_rail_voltage",         f->FCCPU_X1VDD_rail_voltage);
+    bm_row("FCCPU_X2VDD_rail_voltage",         f->FCCPU_X2VDD_rail_voltage);
+    bm_row("FCCPU_12V_main_voltage",           f->FCCPU_12V_main_voltage);
+    bm_row("FCCPU_BM_ADC_3V_2",                f->FCCPU_BM_ADC_3V_2);
+    bm_row("FCCPU_core_local_temperature",     f->FCCPU_core_local_temperature);
+    bm_row("FCCPU_core_remote_temperature",    f->FCCPU_core_remote_temperature);
+    bm_row("FCCPU_RAM_temperature",            f->FCCPU_RAM_temperature);
+    bm_row("FCCPU_FLASH_temperature",          f->FCCPU_FLASH_temperature);
+    bm_row("FCCPU_1v8_input_current",          f->FCCPU_1v8_input_current);
+    bm_row("FCCPU_power_IC_temperature",       f->FCCPU_power_IC_temperature);
+    bm_section_footer();
 
-    printf("\n[ DTN ES STATUS DATA ]\n");
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "VDD Input Current", data->dtn_es_status_st.DTN_ES_VDD_input_current, "12V Main Current", data->dtn_es_status_st.DTN_ES_12V_main_current);
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "12V Main Voltage", data->dtn_es_status_st.DTN_ES_12V_main_voltage, "1v8 Rail Voltage", data->dtn_es_status_st.DTN_ES_1v8_rail_voltage);
+    const bm_dtn_es_status_data_t *e = &data->dtn_es_status_st;
+    bm_section_header("DTN ES STATUS DATA (15 fields)");
+    bm_row("DTN_ES_VDD_input_current",         e->DTN_ES_VDD_input_current);
+    bm_row("DTN_ES_3v3_rail_input_current",    e->DTN_ES_3v3_rail_input_current);
+    bm_row("DTN_ES_FO_RX_imon_r",              e->DTN_ES_FO_RX_imon_r);
+    bm_row("DTN_ES_1v8_rail_input_current",    e->DTN_ES_1v8_rail_input_current);
+    bm_row("DTN_ES_1v3_rail_input_current",    e->DTN_ES_1v3_rail_input_current);
+    bm_row("DTN_ES_12V_main_current",          e->DTN_ES_12V_main_current);
+    bm_row("DTN_ES_BM_3V_1",                   e->DTN_ES_BM_3V_1);
+    bm_row("DTN_ES_1V_VDD_rail_voltage",       e->DTN_ES_1V_VDD_rail_voltage);
+    bm_row("DTN_ES_2v5_rail_voltage",          e->DTN_ES_2v5_rail_voltage);
+    bm_row("DTN_ES_1v8_rail_voltage",          e->DTN_ES_1v8_rail_voltage);
+    bm_row("DTN_ES_1V_VDDA_rail_voltage",      e->DTN_ES_1V_VDDA_rail_voltage);
+    bm_row("DTN_ES_3v3_VDDIX_rail_voltage",    e->DTN_ES_3v3_VDDIX_rail_voltage);
+    bm_row("DTN_ES_2v5_rail_input_current",    e->DTN_ES_2v5_rail_input_current);
+    bm_row("DTN_ES_12V_main_voltage",          e->DTN_ES_12V_main_voltage);
+    bm_row("DTN_ES_BM_3V_2",                   e->DTN_ES_BM_3V_2);
+    bm_section_footer();
 
-    printf("\n[ DTN VSW STATUS DATA ]\n");
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "VDD Input Current", data->vs_dtn_sw_status_st.DTN_VSW_VDD_input_current, "12V Main Current", data->vs_dtn_sw_status_st.DTN_VSW_12V_main_current);
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "12V Main Voltage", data->vs_dtn_sw_status_st.DTN_VSW_12V_main_voltage, "FO V RX Imon R", data->vs_dtn_sw_status_st.DTN_VSW_FO_V_RX_imon_r);
+    const bm_vs_dtn_sw_status_data_t *vs = &data->vs_dtn_sw_status_st;
+    bm_section_header("DTN VSW STATUS DATA (15 fields)");
+    bm_row("DTN_VSW_VDD_input_current",        vs->DTN_VSW_VDD_input_current);
+    bm_row("DTN_VSW_3v3_rail_input_current",   vs->DTN_VSW_3v3_rail_input_current);
+    bm_row("DTN_VSW_FO_V_RX_imon_r",           vs->DTN_VSW_FO_V_RX_imon_r);
+    bm_row("DTN_VSW_1v8_rail_input_current",   vs->DTN_VSW_1v8_rail_input_current);
+    bm_row("DTN_VSW_1v3_rail_input_current",   vs->DTN_VSW_1v3_rail_input_current);
+    bm_row("DTN_VSW_12V_main_current",         vs->DTN_VSW_12V_main_current);
+    bm_row("DTN_VSW_BM_ADC_3V_1",              vs->DTN_VSW_BM_ADC_3V_1);
+    bm_row("DTN_VSW_1V_VDD_rail_voltage",      vs->DTN_VSW_1V_VDD_rail_voltage);
+    bm_row("DTN_VSW_2v5_rail_voltage",         vs->DTN_VSW_2v5_rail_voltage);
+    bm_row("DTN_VSW_1v8_rail_voltage",         vs->DTN_VSW_1v8_rail_voltage);
+    bm_row("DTN_VSW_1V_VDDA_rail_voltage",     vs->DTN_VSW_1V_VDDA_rail_voltage);
+    bm_row("DTN_VSW_2v5_rail_input_current",   vs->DTN_VSW_2v5_rail_input_current);
+    bm_row("DTN_VSW_12V_main_voltage",         vs->DTN_VSW_12V_main_voltage);
+    bm_row("DTN_VSW_FO_VF_RX_imon_r",          vs->DTN_VSW_FO_VF_RX_imon_r);
+    bm_row("DTN_VSW_3v3_VDDIX_voltage",        vs->DTN_VSW_3v3_VDDIX_voltage);
+    bm_section_footer();
 
-    printf("\n[ VMC BOARD STATUS DATA ]\n");
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "PSM PRI VOLS", data->vmc_board_status_st.PSM_PWR_PRI_VOLS, "PSM SEC VOLS", data->vmc_board_status_st.PSM_PWR_SEC_VOLS);
-    printf(" %-30s: %8.4f | %-30s: %8.4f\n", "BM FPGA Temp", data->vmc_board_status_st.BM_FPGA_temperature, "Board Edge Temp", data->vmc_board_status_st.Board_edge_temperature);
+    const bm_flcs_dtn_sw_status_data_t *fs = &data->flcs_dtn_sw_status_st;
+    bm_section_header("DTN FSW STATUS DATA (15 fields)");
+    bm_row("DTN_FSW_VDD_input_current",        fs->DTN_FSW_VDD_input_current);
+    bm_row("DTN_FSW_3v3_rail_input_current",   fs->DTN_FSW_3v3_rail_input_current);
+    bm_row("DTN_FSW_FO_F_RX_imon_r",           fs->DTN_FSW_FO_F_RX_imon_r);
+    bm_row("DTN_FSW_1v8_rail_input_current",   fs->DTN_FSW_1v8_rail_input_current);
+    bm_row("DTN_FSW_1v3_rail_input_current",   fs->DTN_FSW_1v3_rail_input_current);
+    bm_row("DTN_FSW_12V_main_current",         fs->DTN_FSW_12V_main_current);
+    bm_row("DTN_FSW_BM_ADC_3V_1",              fs->DTN_FSW_BM_ADC_3V_1);
+    bm_row("DTN_FSW_1V_VDD_rail_voltage",      fs->DTN_FSW_1V_VDD_rail_voltage);
+    bm_row("DTN_FSW_2v5_rail_voltage",         fs->DTN_FSW_2v5_rail_voltage);
+    bm_row("DTN_FSW_1v8_rail_voltage",         fs->DTN_FSW_1v8_rail_voltage);
+    bm_row("DTN_FSW_1V_VDDA_rail_voltage",     fs->DTN_FSW_1V_VDDA_rail_voltage);
+    bm_row("DTN_FSW_3v3_VDDIX_rail_voltage",   fs->DTN_FSW_3v3_VDDIX_rail_voltage);
+    bm_row("DTN_FSW_2v5_rail_input_current",   fs->DTN_FSW_2v5_rail_input_current);
+    bm_row("DTN_FSW_12V_main_voltage",         fs->DTN_FSW_12V_main_voltage);
+    bm_row("DTN_FSW_BM_ADC_3V_2",              fs->DTN_FSW_BM_ADC_3V_2);
+    bm_section_footer();
+
+    const bm_vmc_board_status_data_t *b = &data->vmc_board_status_st;
+    bm_section_header("VMC BOARD STATUS DATA (7 fields)");
+    bm_row("PSM_PWR_PRI_VOLS",                 b->PSM_PWR_PRI_VOLS);
+    bm_row("PSM_PWR_SEC_VOLS",                 b->PSM_PWR_SEC_VOLS);
+    bm_row("PSM_INPUT_CURS",                   b->PSM_INPUT_CURS);
+    bm_row("PSM_TEMP",                         b->PSM_TEMP);
+    bm_row("BM_FPGA_temperature",              b->BM_FPGA_temperature);
+    bm_row("Board_edge_temperature",           b->Board_edge_temperature);
+    bm_row("BRD_MNGR_12V_main_current",        b->BRD_MNGR_12V_main_current);
+    bm_section_footer();
     printf("========================================================================================\n");
 }
 
@@ -797,60 +910,185 @@ void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *de
     printf("========================================================================================\n");
 }
 
-// 3. DTN ES CBIT
+// 3. DTN ES CBIT — tüm 47 monitoring alanı tek tabloda basılır
+static void u64_row(const char *name, uint64_t v)
+{
+    printf("| %-47s| %20lu |\n", name, (unsigned long)v);
+}
+static void u64_hex_row(const char *name, uint64_t v)
+{
+    printf("| %-47s| 0x%018lx |\n", name, (unsigned long)v);
+}
+static void u32_row(const char *name, uint32_t v)
+{
+    printf("| %-47s| %20u |\n", name, v);
+}
+static void u16_row(const char *name, uint16_t v)
+{
+    printf("| %-47s| %20u |\n", name, v);
+}
+static void u8_row(const char *name, uint8_t v)
+{
+    printf("| %-47s| %20u |\n", name, v);
+}
+static void float_row(const char *name, float v, const char *unit)
+{
+    printf("| %-47s| %14.3f %-5s |\n", name, v, unit);
+}
+static void section_header_wide(const char *title)
+{
+    printf("\n+------------------------------------------------+----------------------+\n");
+    printf("| %-47s| %-20s |\n", title, "VALUE");
+    printf("+------------------------------------------------+----------------------+\n");
+}
+static void section_footer_wide(void)
+{
+    printf("+------------------------------------------------+----------------------+\n");
+}
+
 void print_dtn_es_cbit_report(const dtn_es_cbit_report_t *data, const char *device_name)
 {
     if (!data) return;
-
     const char *prefix = (device_name != NULL) ? device_name : "UNKNOWN";
 
     printf("\n========================================================================================\n");
     printf("                           [%s] DTN ES CBIT REPORT                                      \n", prefix);
     printf("========================================================================================\n");
+    printf("[ GENERAL ]\n");
+    printf(" Msg ID       : %-18u | Msg Len      : %u\n",
+           data->header_st.message_identifier, data->header_st.message_len);
+    printf(" Timestamp    : %-18lu | LRU ID       : %u\n",
+           (unsigned long)data->header_st.timestamp, data->lru_id);
+    printf(" Side Type    : %-18u | Network Type : %u\n", data->side_type, data->network_type);
+    printf(" Comm Status  : %u\n", data->comm_status);
 
-    printf("[ GENERAL INFO ]\n");
-    printf(" LRU ID       : %u                  | Network Type : %u\n", data->lru_id, data->network_type);
-    printf(" Side Type    : %u                  | Comm Status  : %u\n", data->side_type, data->comm_status);
+    const dtn_es_monitoring_t *m = &data->dtn_es_monitoring_st;
 
-    const dtn_es_monitoring_t *es = &data->dtn_es_monitoring_st;
-    printf("\n[ DEVICE & PTP STATUS ]\n");
-    printf(" ES FW Ver    : %u.%u.%u              | HW Temp      : %.3f °C\n",
-           es->A664_ES_FW_VER.major, es->A664_ES_FW_VER.minor, es->A664_ES_FW_VER.bugfix,
-           es->A664_ES_HW_TEMP);
-    printf(" Device ID    : %-18lu | HW VCC Int   : %.3f V\n",
-           (unsigned long)es->A664_ES_DEV_ID, es->A664_ES_HW_VCC_INT);
-    printf(" ES Mode      : %-18lu | Transc Temp  : %.3f °C\n",
-           (unsigned long)es->A664_ES_MODE, es->A664_ES_TRANSCEIVER_TEMP);
-    printf(" PTP RC Stat  : %-18u | Port A Sync  : %u\n", es->A664_PTP_RC_STATUS, es->A664_PTP_PORT_A_SYNC);
-    printf(" Config ID    : %-18lu | Port B Sync  : %u\n", (unsigned long)es->A664_ES_CONFIG_ID, es->A664_PTP_PORT_B_SYNC);
+    section_header_wide("DEVICE / CONFIG");
+    printf("| %-47s| %14u.%u.%u       |\n", "A664_ES_FW_VER (major.minor.bugfix)",
+           m->A664_ES_FW_VER.major, m->A664_ES_FW_VER.minor, m->A664_ES_FW_VER.bugfix);
+    u64_row("A664_ES_DEV_ID",           m->A664_ES_DEV_ID);
+    u64_row("A664_ES_MODE",             m->A664_ES_MODE);
+    u64_row("A664_ES_CONFIG_ID",        m->A664_ES_CONFIG_ID);
+    u64_hex_row("A664_ES_BIT_STATUS",   m->A664_ES_BIT_STATUS);
+    u64_hex_row("A664_ES_CONFIG_STATUS",m->A664_ES_CONFIG_STATUS);
+    u64_row("A664_ES_VENDOR_TYPE",      m->A664_ES_VENDOR_TYPE);
+    u64_row("A664_BSP_VER",             m->A664_BSP_VER);
+    section_footer_wide();
 
-    printf("\n[ TRAFFIC METRICS ]\n");
-    printf(" %-40s | %-40s\n", "TX COUNTERS", "RX COUNTERS");
-    printf("------------------------------------------|---------------------------------------------\n");
-    printf(" TX Incoming  : %-23lu | RX Incoming A : %lu\n", es->A664_ES_TX_INCOMING_COUNT, es->A664_ES_RX_A_INCOMING_COUNT);
-    printf(" TX Outgoing A: %-23lu | RX Incoming B : %lu\n", es->A664_ES_TX_A_OUTGOING_COUNT, es->A664_ES_RX_B_INCOMING_COUNT);
-    printf(" TX Outgoing B: %-23lu | RX Outgoing   : %lu\n", es->A664_ES_TX_B_OUTGOING_COUNT, es->A664_ES_RX_OUTGOING_COUNT);
-    printf(" TX VLID Drop : %-23lu | RX VLID Drop A: %lu\n", es->A664_ES_TX_VLID_DROP_COUNT, es->A664_ES_RX_A_VLID_DROP_COUNT);
-    printf(" TX Max Jitter: %-23lu | RX CRC Err A  : %lu\n", es->A664_ES_TX_MAX_JITTER_DROP_COUNT, es->A664_ES_RX_A_CRC_ERROR_COUNT);
+    section_header_wide("PTP");
+    u16_row("A664_PTP_CONFIG_ID",    m->A664_PTP_CONFIG_ID);
+    u8_row ("A664_PTP_DEVICE_TYPE",  m->A664_PTP_DEVICE_TYPE);
+    u8_row ("A664_PTP_RC_STATUS",    m->A664_PTP_RC_STATUS);
+    u8_row ("A664_PTP_PORT_A_SYNC",  m->A664_PTP_PORT_A_SYNC);
+    u8_row ("A664_PTP_PORT_B_SYNC",  m->A664_PTP_PORT_B_SYNC);
+    u16_row("A664_PTP_SYNC_VL_ID",   m->A664_PTP_SYNC_VL_ID);
+    u16_row("A664_PTP_REQ_VL_ID",    m->A664_PTP_REQ_VL_ID);
+    u16_row("A664_PTP_RES_VL_ID",    m->A664_PTP_RES_VL_ID);
+    u8_row ("A664_PTP_TOD_NETWORK",  m->A664_PTP_TOD_NETWORK);
+    section_footer_wide();
+
+    section_header_wide("HARDWARE SENSORS");
+    float_row("A664_ES_HW_TEMP",          m->A664_ES_HW_TEMP,          "degC");
+    float_row("A664_ES_HW_VCC_INT",       m->A664_ES_HW_VCC_INT,       "V");
+    float_row("A664_ES_TRANSCEIVER_TEMP", m->A664_ES_TRANSCEIVER_TEMP, "degC");
+    section_footer_wide();
+
+    section_header_wide("PORT STATUS");
+    u64_hex_row("A664_ES_PORT_A_STATUS", m->A664_ES_PORT_A_STATUS);
+    u64_hex_row("A664_ES_PORT_B_STATUS", m->A664_ES_PORT_B_STATUS);
+    section_footer_wide();
+
+    section_header_wide("TX COUNTERS");
+    u64_row("A664_ES_TX_INCOMING_COUNT",       m->A664_ES_TX_INCOMING_COUNT);
+    u64_row("A664_ES_TX_A_OUTGOING_COUNT",     m->A664_ES_TX_A_OUTGOING_COUNT);
+    u64_row("A664_ES_TX_B_OUTGOING_COUNT",     m->A664_ES_TX_B_OUTGOING_COUNT);
+    u64_row("A664_ES_TX_VLID_DROP_COUNT",      m->A664_ES_TX_VLID_DROP_COUNT);
+    u64_row("A664_ES_TX_LMIN_LMAX_DROP_COUNT", m->A664_ES_TX_LMIN_LMAX_DROP_COUNT);
+    u64_row("A664_ES_TX_MAX_JITTER_DROP_COUNT",m->A664_ES_TX_MAX_JITTER_DROP_COUNT);
+    section_footer_wide();
+
+    section_header_wide("RX A COUNTERS");
+    u64_row("A664_ES_RX_A_INCOMING_COUNT",          m->A664_ES_RX_A_INCOMING_COUNT);
+    u64_row("A664_ES_RX_A_VLID_DROP_COUNT",         m->A664_ES_RX_A_VLID_DROP_COUNT);
+    u64_row("A664_ES_RX_A_LMIN_LMAX_DROP_COUNT",    m->A664_ES_RX_A_LMIN_LMAX_DROP_COUNT);
+    u64_row("A664_ES_RX_A_NET_ERR_COUNT",           m->A664_ES_RX_A_NET_ERR_COUNT);
+    u64_row("A664_ES_RX_A_SEQ_ERR_COUNT",           m->A664_ES_RX_A_SEQ_ERR_COUNT);
+    u64_row("A664_ES_RX_A_CRC_ERROR_COUNT",         m->A664_ES_RX_A_CRC_ERROR_COUNT);
+    u64_row("A664_ES_RX_A_IP_CHECKSUM_ERROR_COUNT", m->A664_ES_RX_A_IP_CHECKSUM_ERROR_COUNT);
+    section_footer_wide();
+
+    section_header_wide("RX B COUNTERS");
+    u64_row("A664_ES_RX_B_INCOMING_COUNT",          m->A664_ES_RX_B_INCOMING_COUNT);
+    u64_row("A664_ES_RX_B_VLID_DROP_COUNT",         m->A664_ES_RX_B_VLID_DROP_COUNT);
+    u64_row("A664_ES_RX_B_LMIN_LMAX_DROP_COUNT",    m->A664_ES_RX_B_LMIN_LMAX_DROP_COUNT);
+    u64_row("A664_ES_RX_B_SEQ_ERR_COUNT",           m->A664_ES_RX_B_SEQ_ERR_COUNT);
+    u64_row("A664_ES_RX_B_NET_ERR_COUNT",           m->A664_ES_RX_B_NET_ERR_COUNT);
+    u64_row("A664_ES_RX_B_CRC_ERROR_COUNT",         m->A664_ES_RX_B_CRC_ERROR_COUNT);
+    u64_row("A664_ES_RX_B_IP_CHECKSUM_ERROR_COUNT", m->A664_ES_RX_B_IP_CHECKSUM_ERROR_COUNT);
+    section_footer_wide();
+
+    section_header_wide("RX TOTAL + BSP");
+    u64_row("A664_ES_RX_OUTGOING_COUNT",        m->A664_ES_RX_OUTGOING_COUNT);
+    u64_row("A664_BSP_TX_PACKET_COUNT",         m->A664_BSP_TX_PACKET_COUNT);
+    u64_row("A664_BSP_TX_BYTE_COUNT",           m->A664_BSP_TX_BYTE_COUNT);
+    u64_row("A664_BSP_TX_ERROR_COUNT",          m->A664_BSP_TX_ERROR_COUNT);
+    u64_row("A664_BSP_RX_PACKET_COUNT",         m->A664_BSP_RX_PACKET_COUNT);
+    u64_row("A664_BSP_RX_BYTE_COUNT",           m->A664_BSP_RX_BYTE_COUNT);
+    u64_row("A664_BSP_RX_ERROR_COUNT",          m->A664_BSP_RX_ERROR_COUNT);
+    u64_row("A664_BSP_RX_MISSED_FRAME_COUNT",   m->A664_BSP_RX_MISSED_FRAME_COUNT);
+    u64_row("A664_ES_BSP_QUEUING_RX_VL_PORT_DROP_COUNT",
+            m->A664_ES_BSP_QUEUING_RX_VL_PORT_DROP_COUNT);
+    section_footer_wide();
+
     printf("========================================================================================\n");
 }
 
-// 4. DTN SW CBIT
+// 4. DTN SW CBIT — tam status + 8 port (her portun 19 alanı da basılır)
+static void print_dtn_sw_port_block(int idx, const dtn_sw_port_mon_t *p)
+{
+    char title[64];
+    snprintf(title, sizeof(title), "PORT[%d]  (port_id=%u)", idx, p->A664_SW_PORT_ID);
+    section_header_wide(title);
+    u16_row("A664_SW_PORT_ID",                             p->A664_SW_PORT_ID);
+    u8_row ("A664_SW_PORT_i_BIT_STATUS",                   p->A664_SW_PORT_i_BIT_STATUS);
+    u8_row ("A664_SW_PORT_i_STATUS",                       p->A664_SW_PORT_i_STATUS);
+    u64_row("A664_SW_PORT_i_CRC_ERR_COUNT",                p->A664_SW_PORT_i_CRC_ERR_COUNT);
+    u64_row("A664_SW_PORT_i_MIN_VL_FRAME_ERR_COUNT",       p->A664_SW_PORT_i_MIN_VL_FRAME_ERR_COUNT);
+    u64_row("A664_SW_PORT_i_MAX_VL_FRAME_ERR_COUNT",       p->A664_SW_PORT_i_MAX_VL_FRAME_ERR_COUNT);
+    u64_row("A664_SW_PORT_i_TRAFFIC_POLCY_DROP_COUNT",     p->A664_SW_PORT_i_TRAFFIC_POLCY_DROP_COUNT);
+    u64_row("A664_SW_PORT_i_BE_COUNT",                     p->A664_SW_PORT_i_BE_COUNT);
+    u64_row("A664_SW_PORT_i_TX_COUNT",                     p->A664_SW_PORT_i_TX_COUNT);
+    u64_row("A664_SW_PORT_i_RX_COUNT",                     p->A664_SW_PORT_i_RX_COUNT);
+    u64_row("A664_SW_PORT_i_VL_SOURCE_ERR_COUNT",          p->A664_SW_PORT_i_VL_SOURCE_ERR_COUNT);
+    u64_row("A664_SW_PORT_i_MAX_DELAY_ERR_COUNT",          p->A664_SW_PORT_i_MAX_DELAY_ERR_COUNT);
+    u64_row("A664_SW_PORT_i_VLID_DROP_COUNT",              p->A664_SW_PORT_i_VLID_DROP_COUNT);
+    u64_row("A664_SW_PORT_i_UNDEF_MAC_COUNT",              p->A664_SW_PORT_i_UNDEF_MAC_COUNT);
+    u64_row("A664_SW_PORT_i_HIGH_PRTY_QUE_OVRFLW_COUNT",   p->A664_SW_PORT_i_HIGH_PRTY_QUE_OVRFLW_COUNT);
+    u64_row("A664_SW_PORT_i_LOW_PRTY_QUE_OVRFLW_COUNT",    p->A664_SW_PORT_i_LOW_PRTY_QUE_OVRFLW_COUNT);
+    u64_row("A664_SW_PORT_i_MAX_DELAY",                    p->A664_SW_PORT_i_MAX_DELAY);
+    u64_row("A664_SW_PORT_i_SPEED",                        p->A664_SW_PORT_i_SPEED);
+    section_footer_wide();
+}
+
 void print_dtn_sw_cbit_report(const dtn_sw_cbit_report_t *data, const char *device_name)
 {
     if (!data) return;
-
     const char *prefix = (device_name != NULL) ? device_name : "UNKNOWN";
 
     printf("\n========================================================================================\n");
     printf("                            [%s] DTN SW CBIT REPORT                                      \n", prefix);
     printf("========================================================================================\n");
-
-    printf("[ SWITCH GENERAL INFO ]\n");
-    printf(" LRU ID       : %u                  | Network Type : %u\n", data->lru_id, data->network_type);
+    printf("[ GENERAL ]\n");
+    printf(" Msg ID       : %-18u | Msg Len      : %u\n",
+           data->header_st.message_identifier, data->header_st.message_len);
+    printf(" Timestamp    : %-18lu | LRU ID       : %u\n",
+           (unsigned long)data->header_st.timestamp, data->lru_id);
+    printf(" Side Type    : %-18u | Network Type : %u\n", data->side_type, data->network_type);
+    printf(" Comm Status  : %u\n", data->comm_status);
 
     const dtn_sw_status_mon_t *sw = &data->dtn_sw_monitoring_st.status;
-    printf("\n[ SWITCH STATUS ]\n");
+
     // FW version'ı u64'ün düşük 3 byte'ı major.minor.bugfix olarak yorumla
     uint8_t fw_major  = (uint8_t)((sw->A664_SW_FW_VER >> 16) & 0xff);
     uint8_t fw_minor  = (uint8_t)((sw->A664_SW_FW_VER >>  8) & 0xff);
@@ -859,34 +1097,30 @@ void print_dtn_sw_cbit_report(const dtn_sw_cbit_report_t *data, const char *devi
     uint8_t ef_minor  = (uint8_t)((sw->A664_SW_EMBEDEED_ES_FW_VER >>  8) & 0xff);
     uint8_t ef_bugfix = (uint8_t)( sw->A664_SW_EMBEDEED_ES_FW_VER        & 0xff);
 
-    printf(" Device ID    : %-18u | FW Version   : %u.%u.%u\n",
-           sw->A664_SW_DEV_ID, fw_major, fw_minor, fw_bugfix);
-    printf(" TX Total Cnt : %-18lu | RX Total Cnt : %lu\n",
-           (unsigned long)sw->A664_SW_TX_TOTAL_COUNT, (unsigned long)sw->A664_SW_RX_TOTAL_COUNT);
-    printf(" Transc Temp  : %-8.3f °C     | Shared Temp  : %.3f °C\n",
-           sw->A664_SW_TRANSCEIVER_TEMP, sw->A664_SW_SHARED_TRANSCEIVER_TEMP);
-    printf(" Voltage      : %-8.3f V      | Temperature  : %.3f °C\n",
-           sw->A664_SW_VOLTAGE, sw->A664_SW_TEMPERATURE);
-    printf(" Port Count   : %-18u | Mode         : %u\n", sw->A664_SW_PORT_COUNT, sw->A664_SW_MODE);
-    printf(" Config ID    : %-18u | Embedded FW  : %u.%u.%u\n",
-           sw->A664_SW_CONFIGURATION_ID, ef_major, ef_minor, ef_bugfix);
-
-    printf("\n[ PORT STATUS OVERVIEW ]\n");
-    printf(" %-4s | %-6s | %-8s | %-12s | %-12s | %-12s | %-12s\n",
-           "PORT", "STATUS", "SPEED", "TX COUNT", "RX COUNT", "CRC ERR", "VLID DROP");
-    printf("------|--------|----------|--------------|--------------|--------------|--------------\n");
+    section_header_wide("SWITCH STATUS (14 fields)");
+    u64_row("A664_SW_TX_TOTAL_COUNT",           sw->A664_SW_TX_TOTAL_COUNT);
+    u64_row("A664_SW_RX_TOTAL_COUNT",           sw->A664_SW_RX_TOTAL_COUNT);
+    float_row("A664_SW_TRANSCEIVER_TEMP",       sw->A664_SW_TRANSCEIVER_TEMP,        "degC");
+    float_row("A664_SW_SHARED_TRANSCEIVER_TEMP",sw->A664_SW_SHARED_TRANSCEIVER_TEMP, "degC");
+    u16_row("A664_SW_DEV_ID",                   sw->A664_SW_DEV_ID);
+    u8_row ("A664_SW_PORT_COUNT",               sw->A664_SW_PORT_COUNT);
+    u8_row ("A664_SW_TOKEN_BUCKET",             sw->A664_SW_TOKEN_BUCKET);
+    u8_row ("A664_SW_MODE",                     sw->A664_SW_MODE);
+    u8_row ("A664_SW_BE_MAC_UPDATE",            sw->A664_SW_BE_MAC_UPDATE);
+    u8_row ("A664_SW_BE_UPSTREAM_MODE",         sw->A664_SW_BE_UPSTREAM_MODE);
+    printf("| %-47s| %14u.%u.%u       |\n", "A664_SW_FW_VER (major.minor.bugfix)",
+           fw_major, fw_minor, fw_bugfix);
+    printf("| %-47s| %14u.%u.%u       |\n", "A664_SW_EMBEDEED_ES_FW_VER (M.m.b)",
+           ef_major, ef_minor, ef_bugfix);
+    float_row("A664_SW_VOLTAGE",                sw->A664_SW_VOLTAGE,                 "V");
+    float_row("A664_SW_TEMPERATURE",            sw->A664_SW_TEMPERATURE,             "degC");
+    u16_row("A664_SW_CONFIGURATION_ID",         sw->A664_SW_CONFIGURATION_ID);
+    section_footer_wide();
 
     for (int i = 0; i < 8; i++) {
-        const dtn_sw_port_mon_t *p = &data->dtn_sw_monitoring_st.port[i];
-        printf(" #%-3u | %-6u | %-8lu | %-12lu | %-12lu | %-12lu | %-12lu\n",
-               p->A664_SW_PORT_ID,
-               p->A664_SW_PORT_i_STATUS,
-               p->A664_SW_PORT_i_SPEED,
-               p->A664_SW_PORT_i_TX_COUNT,
-               p->A664_SW_PORT_i_RX_COUNT,
-               p->A664_SW_PORT_i_CRC_ERR_COUNT,
-               p->A664_SW_PORT_i_VLID_DROP_COUNT);
+        print_dtn_sw_port_block(i, &data->dtn_sw_monitoring_st.port[i]);
     }
+
     printf("========================================================================================\n");
 }
 
