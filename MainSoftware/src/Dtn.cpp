@@ -450,12 +450,8 @@ bool Dtn::configureSequence()
             break;
 
         std::string raw;
-        // tail -n 4000: dpdk her saniye bir stats tablosu (~50 satır) +
-        // health-monitor dashboard (~1400 satır) yazıyor. 300 satır tek bir
-        // HM tick'ine bile yetmiyordu; 4000 ile 2-3 tam cycle yakalanır ve
-        // rfind iki stats marker'ını bulabilir.
         g_ssh_deployer_server.execute(
-            "tail -n 4000 /tmp/dpdk_app.log", &raw, false, true);
+            "tail -n 300 /tmp/dpdk_app.log", &raw, false, true);
 
         if (!raw.empty())
         {
