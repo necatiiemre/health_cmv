@@ -50,10 +50,12 @@ static inline bool hm_is_health_monitor_vl_id(uint16_t vl_id)
 void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len);
 
 // ============================================================================
-// Printer thread yaşam döngüsü (main.c'den çağrılır)
+// Dashboard — main thread içinden çağrılır.
+// hm_print_dashboard() her çağrıldığında şu anki en güncel snapshot'ı basar
+// (tüm HM slot'larını sırayla). Stats tablosundan sonra çağrılarak sıralı
+// çıktı elde edilir.
 // ============================================================================
-int  hm_start_printer_thread(volatile bool *stop_flag);
-void hm_stop_printer_thread(void);
+void hm_print_dashboard(void);
 
 // ============================================================================
 // Print fonksiyonları (printer thread ya da debug amaçlı dışarıdan çağrılır)
