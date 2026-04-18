@@ -577,6 +577,7 @@ void hm_print_dashboard(void)
            (unsigned long)unknown_msg,
            (unsigned long)short_cnt,
            any ? 1 : 0);
+
     fflush(stdout);
     tick++;
 }
