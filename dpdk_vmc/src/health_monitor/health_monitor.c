@@ -792,17 +792,42 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
 
 // 2b. BM FLAG — semantic bitfield print helpers
 // names[bit_index] (0..15). NULL => reserved.
+static const char *bm_semantic_state(const char *name, bool is_set)
+{
+    // Human-friendly semantic mapping:
+    // - *_power_good / *_p_good: SET => GOOD, CLEAR => BAD
+    // - *fault* / *error* / *loss* / *not_ready* / watchdog/hreset/...:
+    //   SET => BAD, CLEAR => GOOD
+    // - unknown/reserved: SET/CLEAR (or N/A for reserved).
+    if (!name || strcmp(name, "reserved") == 0) return "N/A";
+
+    if (strstr(name, "power_good") || strstr(name, "_p_good")) {
+        return is_set ? "GOOD" : "BAD";
+    }
+
+    if (strstr(name, "fault") || strstr(name, "error") ||
+        strstr(name, "loss") || strstr(name, "not_ready") ||
+        strstr(name, "watchdog") || strstr(name, "hreset") ||
+        strstr(name, "hold_up_not_ok") || strstr(name, "foof")) {
+        return is_set ? "BAD" : "GOOD";
+    }
+
+    return is_set ? "SET" : "CLEAR";
+}
+
 static void print_bitfield_rows(const char *title, uint16_t v, const char *names[16])
 {
+
     printf("\n+------------------------------------------------+------------+\n");
     printf("| %-47s| 0x%04X     |\n", title, v);
     printf("+------------------------------------------------+------------+\n");
-    printf("| %-47s| %-10s |\n", "BIT NAME", "STATE");
+    printf("| %-47s| %-10s |\n", "BIT NAME", "HEALTH");
     printf("+------------------------------------------------+------------+\n");
     for (int bit = 15; bit >= 0; --bit) {
         const char *name = names[bit] ? names[bit] : "reserved";
+        bool is_set = (v & (1u << bit)) != 0;
         printf("| b%-2d %-43s| %-10s |\n",
-               bit, name, (v & (1u << bit)) ? "SET" : "CLEAR");
+               bit, name, bm_semantic_state(name, is_set));
     }
     printf("+------------------------------------------------+------------+\n");
 }
