@@ -276,9 +276,10 @@ typedef struct __attribute__((packed))
     uint8_t  bugfix;                                            // Byte 22         | 1 byte
 } A664_ES_FW_VER_t;                                             // TOPLAM: 8 byte
 
-// Wire format doğrulaması: dtn_es_monitoring_t 341 → 337 byte.
-// Wire'da 4 byte eksik. En olası aday: A664_ES_HW_VCC_INT (4B) — sahadan
-// doğrulanana kadar yapıdan çıkarıldı. Yanlışsa kolayca geri eklenebilir.
+// Wire format doğrulaması: dtn_es_monitoring_t 341 → 337 byte (wire'da 4B eksik).
+// Eksiklik şuradan geliyor: A664_ES_TRANSCEIVER_TEMP wire'da u64 (8B) DEĞİL,
+// float32 (4B) gönderiliyor. HW_TEMP ve HW_VCC_INT de wire'da float; u32
+// yorumlanması saçma değerler üretiyordu.
 typedef struct __attribute__((packed))
 {
     A664_ES_FW_VER_t A664_ES_FW_VER;                            // 0   - 7    | 8 byte
@@ -296,9 +297,9 @@ typedef struct __attribute__((packed))
     uint16_t A664_PTP_REQ_VL_ID;                                // 56  - 57   | 2 byte
     uint16_t A664_PTP_RES_VL_ID;                                // 58  - 59   | 2 byte
     uint8_t  A664_PTP_TOD_NETWORK;                              // 60         | 1 byte
-    uint32_t A664_ES_HW_TEMP;                                   // 61  - 64   | 4 byte
-    // A664_ES_HW_VCC_INT (4B) — wire'da yok, çıkarıldı
-    uint64_t A664_ES_TRANSCEIVER_TEMP;                          // 65  - 72   | 8 byte
+    float    A664_ES_HW_TEMP;                                   // 61  - 64   | 4 byte (wire: float32 BE)
+    float    A664_ES_HW_VCC_INT;                                // 65  - 68   | 4 byte (wire: float32 BE)
+    float    A664_ES_TRANSCEIVER_TEMP;                          // 69  - 72   | 4 byte (wire: float32 BE, u64 değil)
     uint64_t A664_ES_PORT_A_STATUS;                             // Byte 92  - 99   | 8 byte
     uint64_t A664_ES_PORT_B_STATUS;                             // Byte 100 - 107  | 8 byte
     uint64_t A664_ES_TX_INCOMING_COUNT;                         // Byte 108 - 115  | 8 byte
