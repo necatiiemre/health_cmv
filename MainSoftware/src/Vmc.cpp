@@ -5,6 +5,8 @@
 #include "CumulusHelper.h"
 #include "SSHDeployer.h"
 #include "Dtn.h"
+#include "PsuTelemetry.h"
+#include "PsuTelemetryPublisher.h"
 #include "Utils.h"
 #include <iostream>
 #include <unistd.h>
@@ -168,6 +170,19 @@ bool Vmc::configureSequence()
 
     // Record Unit Power On Time when PSU output is enabled
     g_ReportManager.recordUnitPowerOnTime();
+
+    // Start PSU telemetry publisher (same mechanism as DTN mode):
+    // push PSU V/I/W over UDP to the server-side DPDK VMC app so the
+    // health dashboard can show live PSU telemetry and detect staleness.
+    PsuTelemetryPublisher psu_publisher(
+        PSUG30,
+        g_ssh_deployer_server.getHost(),
+        PSU_TELEM_PORT);
+    if (!psu_publisher.start()) {
+        ErrorPrinter::warn("PSU-TELEM",
+            "VMC: Failed to start PSU telemetry publisher - "
+            "DPDK VMC will continue without PSU telemetry rows.");
+    }
 
     sleep(30);
 
