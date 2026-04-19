@@ -1079,10 +1079,10 @@ void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *de
     print_bitfield_rows("PSM POWER SECONDARY FAULT", data->psm_pwr_sec_flt_st.bit_u16, (const bm_bit_info_t[16]){
         [0] = { "psm_power_secondary_fault", BM_POL_FAULT },
     });
-    // psm_oring_ch: redundant güç kanal seçim göstergesi — fault değil, bilgi.
-    // Ham değer (0 / 1) basılır.
+    // psm_oring_ch: spec gereği 0 = primer güç sağlıklı (PASS), 1 = yedek
+    // kanala geçilmiş (FAIL).
     print_bitfield_rows("PSM ORING CH", data->psm_oring_ch_st.bit_u16, (const bm_bit_info_t[16]){
-        [0] = { "psm_oring_ch", BM_POL_VALUE },
+        [0] = { "psm_oring_ch", BM_POL_FAULT },
     });
     print_bitfield_rows("PSM HOLD UP NOT OK", data->psm_hold_up_not_ok_st.bit_u16, (const bm_bit_info_t[16]){
         [0] = { "psm_hold_up_not_ok", BM_POL_FAULT },
