@@ -5,7 +5,10 @@
 #include <stdbool.h>
 #include <vmc_message_types.h>
 
-#define HEALTH_MONITOR_INTERFACE "eno12409"
+// NOT: Health Monitor trafiği ayrı bir interface değil, normal DPDK data-plane
+// port'ları üzerinden taşınır. PBIT request'leri Port 2 (ör. ens1f0np0) üzerinden
+// hm_request_sender tarafından çıkar; response'lar aynı port'tan gelip VL-ID
+// aralığı kontrolüyle hm_handle_packet()'e düşer.
 
 // ============================================================================
 // VL-ID tanımları
