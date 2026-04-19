@@ -893,8 +893,25 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
 }
 
 // 2b. BM FLAG — raw bitfield print helpers
-// names[bit_index] (0..15). NULL => reserved.
-static void print_bitfield_rows(const char *title, uint16_t v, const char *names[16])
+// Polarity konvansiyonu:
+//   BM_POL_GOOD    → isim `_p_good` / `_power_good` / `_good` ile biter; bit=1 PASS, bit=0 FAIL
+//   BM_POL_FAULT   → isim `_fault` / `_error` / `_loss` / `_foof` / `_watchdog` / `_soft_req` /
+//                    `_not_ready` / `_not_ok` ile biter; bit=1 FAIL, bit=0 PASS
+//   BM_POL_NEUTRAL → reserved veya semantiği belirsiz bit (PASS/FAIL yorumlanmaz;
+//                    sadece SET/CLEAR basılır)
+typedef enum {
+    BM_POL_NEUTRAL = 0,
+    BM_POL_GOOD,
+    BM_POL_FAULT
+} bm_bit_polarity_t;
+
+typedef struct {
+    const char        *name;
+    bm_bit_polarity_t  polarity;
+} bm_bit_info_t;
+
+// names[bit_index] (0..15).
+static void print_bitfield_rows(const char *title, uint16_t v, const bm_bit_info_t *bits)
 {
 
     printf("\n+------------------------------------------------+------------+\n");
@@ -903,78 +920,118 @@ static void print_bitfield_rows(const char *title, uint16_t v, const char *names
     printf("| %-47s| %-10s |\n", "BIT NAME", "STATE");
     printf("+------------------------------------------------+------------+\n");
     for (int bit = 15; bit >= 0; --bit) {
-        const char *name = names[bit] ? names[bit] : "reserved";
+        const bm_bit_info_t *info = &bits[bit];
+        const char *name = (info->name != NULL) ? info->name : "reserved";
         bool is_set = (v & (1u << bit)) != 0;
-        printf("| b%-2d %-43s| %-10s |\n",
-               bit, name, is_set ? "SET" : "CLEAR");
+        const char *state;
+        switch (info->polarity) {
+        case BM_POL_GOOD:  state = is_set ? "PASS"  : "FAIL";   break;
+        case BM_POL_FAULT: state = is_set ? "FAIL"  : "PASS";   break;
+        case BM_POL_NEUTRAL:
+        default:           state = is_set ? "SET"   : "CLEAR";  break;
+        }
+        printf("| b%-2d %-43s| %-10s |\n", bit, name, state);
     }
     printf("+------------------------------------------------+------------+\n");
 }
 
-static const char *BM_BITS_POWER_STATUS[16] = {
-    [15] = "reserved", [14] = "reserved",
-    [13] = "VSCPU_hreset_watchdog", [12] = "VSCPU_hreset_soft_req",
-    [11] = "VSCPU_power_off_power_error", [10] = "VSCPU_power_off_soft_req",
-    [9]  = "FCPU_hreset_watchdog", [8] = "FCPU_hreset_soft_req",
-    [7]  = "FCPU_power_off_power_error", [6] = "FCPU_power_off_soft_req",
-    [5]  = "ES_power_off_power_error", [4] = "ES_power_off_soft_req",
-    [3]  = "VSW_power_off_power_error", [2] = "VSW_power_off_soft_req",
-    [1]  = "FSW_power_off_power_error", [0] = "FSW_power_off_soft_req",
+static const bm_bit_info_t BM_BITS_POWER_STATUS[16] = {
+    [13] = { "VSCPU_hreset_watchdog",       BM_POL_FAULT },
+    [12] = { "VSCPU_hreset_soft_req",       BM_POL_FAULT },
+    [11] = { "VSCPU_power_off_power_error", BM_POL_FAULT },
+    [10] = { "VSCPU_power_off_soft_req",    BM_POL_FAULT },
+    [9]  = { "FCPU_hreset_watchdog",        BM_POL_FAULT },
+    [8]  = { "FCPU_hreset_soft_req",        BM_POL_FAULT },
+    [7]  = { "FCPU_power_off_power_error",  BM_POL_FAULT },
+    [6]  = { "FCPU_power_off_soft_req",     BM_POL_FAULT },
+    [5]  = { "ES_power_off_power_error",    BM_POL_FAULT },
+    [4]  = { "ES_power_off_soft_req",       BM_POL_FAULT },
+    [3]  = { "VSW_power_off_power_error",   BM_POL_FAULT },
+    [2]  = { "VSW_power_off_soft_req",      BM_POL_FAULT },
+    [1]  = { "FSW_power_off_power_error",   BM_POL_FAULT },
+    [0]  = { "FSW_power_off_soft_req",      BM_POL_FAULT },
 };
-static const char *BM_BITS_VCPU_PG[16] = {
-    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved", [11] = "reserved",
-    [10] = "VSCPU_vtt_vref_p_good", [9] = "VSCPU_xvdd_p_good", [8] = "VSCPU_s2vdd_p_good",
-    [7] = "VSCPU_s1vdd_p_good", [6] = "VSCPU_g1vdd_1v35_p_good", [5] = "VSCPU_1v8_p_good",
-    [4] = "VSCPU_3v3_p_good", [3] = "VSCPU_5v_p_good", [2] = "VSCPU_1v3_p_good",
-    [1] = "VSCPU_3v3_reg_p_good", [0] = "VSCPU_12v_p_fault",
+static const bm_bit_info_t BM_BITS_VCPU_PG[16] = {
+    [10] = { "VSCPU_vtt_vref_p_good",   BM_POL_GOOD },
+    [9]  = { "VSCPU_xvdd_p_good",       BM_POL_GOOD },
+    [8]  = { "VSCPU_s2vdd_p_good",      BM_POL_GOOD },
+    [7]  = { "VSCPU_s1vdd_p_good",      BM_POL_GOOD },
+    [6]  = { "VSCPU_g1vdd_1v35_p_good", BM_POL_GOOD },
+    [5]  = { "VSCPU_1v8_p_good",        BM_POL_GOOD },
+    [4]  = { "VSCPU_3v3_p_good",        BM_POL_GOOD },
+    [3]  = { "VSCPU_5v_p_good",         BM_POL_GOOD },
+    [2]  = { "VSCPU_1v3_p_good",        BM_POL_GOOD },
+    [1]  = { "VSCPU_3v3_reg_p_good",    BM_POL_GOOD },
+    [0]  = { "VSCPU_12v_p_fault",       BM_POL_FAULT },
 };
-static const char *BM_BITS_FCPU_PG[16] = {
-    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved", [11] = "reserved",
-    [10] = "FCPU_vtt_vref_p_good", [9] = "FCPU_xvdd_p_good", [8] = "FCPU_s2vdd_p_good",
-    [7] = "FCPU_s1vdd_p_good", [6] = "FCPU_g1vdd_1v35_p_good", [5] = "FCPU_1v8_p_good",
-    [4] = "FCPU_3v3_p_good", [3] = "FCPU_5v_p_good", [2] = "FCPU_1v3_p_good",
-    [1] = "FCPU_3v3_reg_p_good", [0] = "FCPU_12v_p_fault",
+static const bm_bit_info_t BM_BITS_FCPU_PG[16] = {
+    [10] = { "FCPU_vtt_vref_p_good",   BM_POL_GOOD },
+    [9]  = { "FCPU_xvdd_p_good",       BM_POL_GOOD },
+    [8]  = { "FCPU_s2vdd_p_good",      BM_POL_GOOD },
+    [7]  = { "FCPU_s1vdd_p_good",      BM_POL_GOOD },
+    [6]  = { "FCPU_g1vdd_1v35_p_good", BM_POL_GOOD },
+    [5]  = { "FCPU_1v8_p_good",        BM_POL_GOOD },
+    [4]  = { "FCPU_3v3_p_good",        BM_POL_GOOD },
+    [3]  = { "FCPU_5v_p_good",         BM_POL_GOOD },
+    [2]  = { "FCPU_1v3_p_good",        BM_POL_GOOD },
+    [1]  = { "FCPU_3v3_reg_p_good",    BM_POL_GOOD },
+    [0]  = { "FCPU_12v_p_fault",       BM_POL_FAULT },
 };
-static const char *BM_BITS_MMP_ES_PG[16] = {
-    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved",
-    [11] = "reserved", [10] = "reserved", [9] = "reserved", [8] = "reserved",
-    [7] = "MMP_DTN_ES_FPGA_vddix_power_good", [6] = "MMP_DTN_ES_FPGA_vdda_1V_power_good",
-    [5] = "MMP_DTN_ES_FPGA_1v8_power_good", [4] = "MMP_DTN_ES_FPGA_2v5_power_good",
-    [3] = "MMP_DTN_ES_FPGA_vdd_1v_power_good", [2] = "MMP_DTN_ES_FPGA_3v3_power_good",
-    [1] = "MMP_DTN_ES_FPGA_1v3_power_good", [0] = "MMP_DTN_ES_FPGA_12v_power_fault",
+static const bm_bit_info_t BM_BITS_MMP_ES_PG[16] = {
+    [7] = { "MMP_DTN_ES_FPGA_vddix_power_good",   BM_POL_GOOD },
+    [6] = { "MMP_DTN_ES_FPGA_vdda_1V_power_good", BM_POL_GOOD },
+    [5] = { "MMP_DTN_ES_FPGA_1v8_power_good",     BM_POL_GOOD },
+    [4] = { "MMP_DTN_ES_FPGA_2v5_power_good",     BM_POL_GOOD },
+    [3] = { "MMP_DTN_ES_FPGA_vdd_1v_power_good",  BM_POL_GOOD },
+    [2] = { "MMP_DTN_ES_FPGA_3v3_power_good",     BM_POL_GOOD },
+    [1] = { "MMP_DTN_ES_FPGA_1v3_power_good",     BM_POL_GOOD },
+    [0] = { "MMP_DTN_ES_FPGA_12v_power_fault",    BM_POL_FAULT },
 };
-static const char *BM_BITS_VSW_B_PG[16] = {
-    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved",
-    [11] = "reserved", [10] = "reserved", [9] = "reserved", [8] = "reserved",
-    [7] = "VMP_DTN_SW_B_FPGA_vddix_power_good", [6] = "VMP_DTN_SW_B_FPGA_vdda_1V_power_good",
-    [5] = "VMP_DTN_SW_B_FPGA_1v8_power_good", [4] = "VMP_DTN_SW_B_FPGA_2v5_power_good",
-    [3] = "VMP_DTN_SW_B_FPGA_vdd_1v_power_good", [2] = "VMP_DTN_SW_B_FPGA_3v3_power_good",
-    [1] = "VMP_DTN_SW_B_FPGA_1v3_power_good", [0] = "VMP_DTN_SW_B_FPGA_12v_power_fault",
+static const bm_bit_info_t BM_BITS_VSW_B_PG[16] = {
+    [7] = { "VMP_DTN_SW_B_FPGA_vddix_power_good",   BM_POL_GOOD },
+    [6] = { "VMP_DTN_SW_B_FPGA_vdda_1V_power_good", BM_POL_GOOD },
+    [5] = { "VMP_DTN_SW_B_FPGA_1v8_power_good",     BM_POL_GOOD },
+    [4] = { "VMP_DTN_SW_B_FPGA_2v5_power_good",     BM_POL_GOOD },
+    [3] = { "VMP_DTN_SW_B_FPGA_vdd_1v_power_good",  BM_POL_GOOD },
+    [2] = { "VMP_DTN_SW_B_FPGA_3v3_power_good",     BM_POL_GOOD },
+    [1] = { "VMP_DTN_SW_B_FPGA_1v3_power_good",     BM_POL_GOOD },
+    [0] = { "VMP_DTN_SW_B_FPGA_12v_power_fault",    BM_POL_FAULT },
 };
-static const char *BM_BITS_VSW_A_PG[16] = {
-    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved",
-    [11] = "reserved", [10] = "reserved", [9] = "reserved", [8] = "reserved",
-    [7] = "VMP_DTN_SW_A_FPGA_vddix_power_good", [6] = "VMP_DTN_SW_A_FPGA_vdda_1V_power_good",
-    [5] = "VMP_DTN_SW_A_FPGA_1v8_power_good", [4] = "VMP_DTN_SW_A_FPGA_2v5_power_good",
-    [3] = "VMP_DTN_SW_A_FPGA_vdd_1v_power_good", [2] = "VMP_DTN_SW_A_FPGA_3v3_power_good",
-    [1] = "VMP_DTN_SW_A_FPGA_1v3_power_good", [0] = "VMP_DTN_SW_A_FPGA_12v_power_fault",
+static const bm_bit_info_t BM_BITS_VSW_A_PG[16] = {
+    [7] = { "VMP_DTN_SW_A_FPGA_vddix_power_good",   BM_POL_GOOD },
+    [6] = { "VMP_DTN_SW_A_FPGA_vdda_1V_power_good", BM_POL_GOOD },
+    [5] = { "VMP_DTN_SW_A_FPGA_1v8_power_good",     BM_POL_GOOD },
+    [4] = { "VMP_DTN_SW_A_FPGA_2v5_power_good",     BM_POL_GOOD },
+    [3] = { "VMP_DTN_SW_A_FPGA_vdd_1v_power_good",  BM_POL_GOOD },
+    [2] = { "VMP_DTN_SW_A_FPGA_3v3_power_good",     BM_POL_GOOD },
+    [1] = { "VMP_DTN_SW_A_FPGA_1v3_power_good",     BM_POL_GOOD },
+    [0] = { "VMP_DTN_SW_A_FPGA_12v_power_fault",    BM_POL_FAULT },
 };
-static const char *BM_BITS_ICS1[16] = {
-    [15] = "reserved", [14] = "reserved",
-    [13] = "VSCPU_core_power_not_ready", [12] = "VSCPU_core_power_fault",
-    [11] = "FCCPU_core_power_not_ready", [10] = "FCCPU_core_power_fault",
-    [9] = "VSCPU_clock_foof", [8] = "VSCPU_clock_loss",
-    [7] = "FCCPU_clock_foof", [6] = "FCCPU_clock_loss",
-    [5] = "DTN_ES_clock_foof", [4] = "DTN_ES_clock_loss",
-    [3] = "DTN_VSW_clock_foof", [2] = "DTN_VSW_clock_loss",
-    [1] = "DTN_FSW_clock_foof", [0] = "DTN_FSW_clock_loss",
+static const bm_bit_info_t BM_BITS_ICS1[16] = {
+    [13] = { "VSCPU_core_power_not_ready", BM_POL_FAULT },
+    [12] = { "VSCPU_core_power_fault",     BM_POL_FAULT },
+    [11] = { "FCCPU_core_power_not_ready", BM_POL_FAULT },
+    [10] = { "FCCPU_core_power_fault",     BM_POL_FAULT },
+    [9]  = { "VSCPU_clock_foof",           BM_POL_FAULT },
+    [8]  = { "VSCPU_clock_loss",           BM_POL_FAULT },
+    [7]  = { "FCCPU_clock_foof",           BM_POL_FAULT },
+    [6]  = { "FCCPU_clock_loss",           BM_POL_FAULT },
+    [5]  = { "DTN_ES_clock_foof",          BM_POL_FAULT },
+    [4]  = { "DTN_ES_clock_loss",          BM_POL_FAULT },
+    [3]  = { "DTN_VSW_clock_foof",         BM_POL_FAULT },
+    [2]  = { "DTN_VSW_clock_loss",         BM_POL_FAULT },
+    [1]  = { "DTN_FSW_clock_foof",         BM_POL_FAULT },
+    [0]  = { "DTN_FSW_clock_loss",         BM_POL_FAULT },
 };
-static const char *BM_BITS_ICS2[16] = {
-    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved", [11] = "reserved",
-    [10] = "reserved", [9] = "reserved", [8] = "reserved", [7] = "reserved", [6] = "reserved", [5] = "reserved",
-    [4] = "temp_ic_5", [3] = "temp_ic_4", [2] = "temp_ic_3", [1] = "temp_ic_2", [0] = "temp_ic_1",
+static const bm_bit_info_t BM_BITS_ICS2[16] = {
+    // temp_ic_* bitleri temperature-IC fault göstergesi olarak yorumlanıyor.
+    // Spec farklı ise polarity'yi düzeltmek yeterli.
+    [4] = { "temp_ic_5", BM_POL_FAULT },
+    [3] = { "temp_ic_4", BM_POL_FAULT },
+    [2] = { "temp_ic_3", BM_POL_FAULT },
+    [1] = { "temp_ic_2", BM_POL_FAULT },
+    [0] = { "temp_ic_1", BM_POL_FAULT },
 };
-
 static void print_event_bitmap_table(const char *title, const uint16_t *arr, size_t count)
 {
     char name[32];
@@ -1014,21 +1071,19 @@ void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *de
     print_bitfield_rows("ICS STATUS 1", data->ics_status_1_st.bit_u16, BM_BITS_ICS1);
     print_bitfield_rows("ICS STATUS 2", data->ics_status_2_st.bit_u16, BM_BITS_ICS2);
 
-    print_bitfield_rows("PSM POWER PRIMARY FAULT", data->psm_pwr_pri_flt_st.bit_u16, (const char *[16]){
-        [15]="reserved",[14]="reserved",[13]="reserved",[12]="reserved",[11]="reserved",[10]="reserved",[9]="reserved",[8]="reserved",
-        [7]="reserved",[6]="reserved",[5]="reserved",[4]="reserved",[3]="reserved",[2]="reserved",[1]="reserved",[0]="psm_power_primary_fault"
+    print_bitfield_rows("PSM POWER PRIMARY FAULT", data->psm_pwr_pri_flt_st.bit_u16, (const bm_bit_info_t[16]){
+        [0] = { "psm_power_primary_fault", BM_POL_FAULT },
     });
-    print_bitfield_rows("PSM POWER SECONDARY FAULT", data->psm_pwr_sec_flt_st.bit_u16, (const char *[16]){
-        [15]="reserved",[14]="reserved",[13]="reserved",[12]="reserved",[11]="reserved",[10]="reserved",[9]="reserved",[8]="reserved",
-        [7]="reserved",[6]="reserved",[5]="reserved",[4]="reserved",[3]="reserved",[2]="reserved",[1]="reserved",[0]="psm_power_secondary_fault"
+    print_bitfield_rows("PSM POWER SECONDARY FAULT", data->psm_pwr_sec_flt_st.bit_u16, (const bm_bit_info_t[16]){
+        [0] = { "psm_power_secondary_fault", BM_POL_FAULT },
     });
-    print_bitfield_rows("PSM ORING CH", data->psm_oring_ch_st.bit_u16, (const char *[16]){
-        [15]="reserved",[14]="reserved",[13]="reserved",[12]="reserved",[11]="reserved",[10]="reserved",[9]="reserved",[8]="reserved",
-        [7]="reserved",[6]="reserved",[5]="reserved",[4]="reserved",[3]="reserved",[2]="reserved",[1]="reserved",[0]="psm_oring_ch"
+    // psm_oring_ch: redundant güç kanal seçim göstergesi — fault değil, bilgi.
+    // Polarity NEUTRAL bırakıldı (SET/CLEAR olarak basılır).
+    print_bitfield_rows("PSM ORING CH", data->psm_oring_ch_st.bit_u16, (const bm_bit_info_t[16]){
+        [0] = { "psm_oring_ch", BM_POL_NEUTRAL },
     });
-    print_bitfield_rows("PSM HOLD UP NOT OK", data->psm_hold_up_not_ok_st.bit_u16, (const char *[16]){
-        [15]="reserved",[14]="reserved",[13]="reserved",[12]="reserved",[11]="reserved",[10]="reserved",[9]="reserved",[8]="reserved",
-        [7]="reserved",[6]="reserved",[5]="reserved",[4]="reserved",[3]="reserved",[2]="reserved",[1]="reserved",[0]="psm_hold_up_not_ok"
+    print_bitfield_rows("PSM HOLD UP NOT OK", data->psm_hold_up_not_ok_st.bit_u16, (const bm_bit_info_t[16]){
+        [0] = { "psm_hold_up_not_ok", BM_POL_FAULT },
     });
 
     uint16_t red[10], orange[12], yellow[12];
