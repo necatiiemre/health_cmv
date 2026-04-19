@@ -897,11 +897,14 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
 //   BM_POL_FAULT   → bit=1 FAIL, bit=0 PASS. İsim `_p_good` / `_power_good`
 //                    ile bitse bile bit aslında fault flag gibi davranıyor
 //                    (alan testinde word=0x0000 iken cihaz sağlıklıydı).
-//   BM_POL_NEUTRAL → reserved veya semantiği belirsiz bit (PASS/FAIL
-//                    yorumlanmaz; sadece SET/CLEAR basılır).
+//   BM_POL_VALUE   → bit ham değeri basılır (0 / 1). Semantiği PASS/FAIL
+//                    değil, bilgi (ör. psm_oring_ch: hangi redundant kanalın
+//                    aktif olduğu).
+//   BM_POL_NEUTRAL → reserved / diğer isimsiz bitler; SET/CLEAR basılır.
 typedef enum {
     BM_POL_NEUTRAL = 0,
-    BM_POL_FAULT
+    BM_POL_FAULT,
+    BM_POL_VALUE
 } bm_bit_polarity_t;
 
 typedef struct {
@@ -925,6 +928,7 @@ static void print_bitfield_rows(const char *title, uint16_t v, const bm_bit_info
         const char *state;
         switch (info->polarity) {
         case BM_POL_FAULT: state = is_set ? "FAIL"  : "PASS";   break;
+        case BM_POL_VALUE: state = is_set ? "1"     : "0";      break;
         case BM_POL_NEUTRAL:
         default:           state = is_set ? "SET"   : "CLEAR";  break;
         }
@@ -1076,9 +1080,9 @@ void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *de
         [0] = { "psm_power_secondary_fault", BM_POL_FAULT },
     });
     // psm_oring_ch: redundant güç kanal seçim göstergesi — fault değil, bilgi.
-    // Polarity NEUTRAL bırakıldı (SET/CLEAR olarak basılır).
+    // Ham değer (0 / 1) basılır.
     print_bitfield_rows("PSM ORING CH", data->psm_oring_ch_st.bit_u16, (const bm_bit_info_t[16]){
-        [0] = { "psm_oring_ch", BM_POL_NEUTRAL },
+        [0] = { "psm_oring_ch", BM_POL_VALUE },
     });
     print_bitfield_rows("PSM HOLD UP NOT OK", data->psm_hold_up_not_ok_st.bit_u16, (const bm_bit_info_t[16]){
         [0] = { "psm_hold_up_not_ok", BM_POL_FAULT },
