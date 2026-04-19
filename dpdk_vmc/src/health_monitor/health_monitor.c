@@ -893,15 +893,14 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
 }
 
 // 2b. BM FLAG — raw bitfield print helpers
-// Polarity konvansiyonu:
-//   BM_POL_GOOD    → isim `_p_good` / `_power_good` / `_good` ile biter; bit=1 PASS, bit=0 FAIL
-//   BM_POL_FAULT   → isim `_fault` / `_error` / `_loss` / `_foof` / `_watchdog` / `_soft_req` /
-//                    `_not_ready` / `_not_ok` ile biter; bit=1 FAIL, bit=0 PASS
-//   BM_POL_NEUTRAL → reserved veya semantiği belirsiz bit (PASS/FAIL yorumlanmaz;
-//                    sadece SET/CLEAR basılır)
+// Konvansiyon (tüm isimlendirilmiş bitler için aynı):
+//   BM_POL_FAULT   → bit=1 FAIL, bit=0 PASS. İsim `_p_good` / `_power_good`
+//                    ile bitse bile bit aslında fault flag gibi davranıyor
+//                    (alan testinde word=0x0000 iken cihaz sağlıklıydı).
+//   BM_POL_NEUTRAL → reserved veya semantiği belirsiz bit (PASS/FAIL
+//                    yorumlanmaz; sadece SET/CLEAR basılır).
 typedef enum {
     BM_POL_NEUTRAL = 0,
-    BM_POL_GOOD,
     BM_POL_FAULT
 } bm_bit_polarity_t;
 
@@ -925,7 +924,6 @@ static void print_bitfield_rows(const char *title, uint16_t v, const bm_bit_info
         bool is_set = (v & (1u << bit)) != 0;
         const char *state;
         switch (info->polarity) {
-        case BM_POL_GOOD:  state = is_set ? "PASS"  : "FAIL";   break;
         case BM_POL_FAULT: state = is_set ? "FAIL"  : "PASS";   break;
         case BM_POL_NEUTRAL:
         default:           state = is_set ? "SET"   : "CLEAR";  break;
@@ -952,59 +950,59 @@ static const bm_bit_info_t BM_BITS_POWER_STATUS[16] = {
     [0]  = { "FSW_power_off_soft_req",      BM_POL_FAULT },
 };
 static const bm_bit_info_t BM_BITS_VCPU_PG[16] = {
-    [10] = { "VSCPU_vtt_vref_p_good",   BM_POL_GOOD },
-    [9]  = { "VSCPU_xvdd_p_good",       BM_POL_GOOD },
-    [8]  = { "VSCPU_s2vdd_p_good",      BM_POL_GOOD },
-    [7]  = { "VSCPU_s1vdd_p_good",      BM_POL_GOOD },
-    [6]  = { "VSCPU_g1vdd_1v35_p_good", BM_POL_GOOD },
-    [5]  = { "VSCPU_1v8_p_good",        BM_POL_GOOD },
-    [4]  = { "VSCPU_3v3_p_good",        BM_POL_GOOD },
-    [3]  = { "VSCPU_5v_p_good",         BM_POL_GOOD },
-    [2]  = { "VSCPU_1v3_p_good",        BM_POL_GOOD },
-    [1]  = { "VSCPU_3v3_reg_p_good",    BM_POL_GOOD },
+    [10] = { "VSCPU_vtt_vref_p_good",   BM_POL_FAULT },
+    [9]  = { "VSCPU_xvdd_p_good",       BM_POL_FAULT },
+    [8]  = { "VSCPU_s2vdd_p_good",      BM_POL_FAULT },
+    [7]  = { "VSCPU_s1vdd_p_good",      BM_POL_FAULT },
+    [6]  = { "VSCPU_g1vdd_1v35_p_good", BM_POL_FAULT },
+    [5]  = { "VSCPU_1v8_p_good",        BM_POL_FAULT },
+    [4]  = { "VSCPU_3v3_p_good",        BM_POL_FAULT },
+    [3]  = { "VSCPU_5v_p_good",         BM_POL_FAULT },
+    [2]  = { "VSCPU_1v3_p_good",        BM_POL_FAULT },
+    [1]  = { "VSCPU_3v3_reg_p_good",    BM_POL_FAULT },
     [0]  = { "VSCPU_12v_p_fault",       BM_POL_FAULT },
 };
 static const bm_bit_info_t BM_BITS_FCPU_PG[16] = {
-    [10] = { "FCPU_vtt_vref_p_good",   BM_POL_GOOD },
-    [9]  = { "FCPU_xvdd_p_good",       BM_POL_GOOD },
-    [8]  = { "FCPU_s2vdd_p_good",      BM_POL_GOOD },
-    [7]  = { "FCPU_s1vdd_p_good",      BM_POL_GOOD },
-    [6]  = { "FCPU_g1vdd_1v35_p_good", BM_POL_GOOD },
-    [5]  = { "FCPU_1v8_p_good",        BM_POL_GOOD },
-    [4]  = { "FCPU_3v3_p_good",        BM_POL_GOOD },
-    [3]  = { "FCPU_5v_p_good",         BM_POL_GOOD },
-    [2]  = { "FCPU_1v3_p_good",        BM_POL_GOOD },
-    [1]  = { "FCPU_3v3_reg_p_good",    BM_POL_GOOD },
+    [10] = { "FCPU_vtt_vref_p_good",   BM_POL_FAULT },
+    [9]  = { "FCPU_xvdd_p_good",       BM_POL_FAULT },
+    [8]  = { "FCPU_s2vdd_p_good",      BM_POL_FAULT },
+    [7]  = { "FCPU_s1vdd_p_good",      BM_POL_FAULT },
+    [6]  = { "FCPU_g1vdd_1v35_p_good", BM_POL_FAULT },
+    [5]  = { "FCPU_1v8_p_good",        BM_POL_FAULT },
+    [4]  = { "FCPU_3v3_p_good",        BM_POL_FAULT },
+    [3]  = { "FCPU_5v_p_good",         BM_POL_FAULT },
+    [2]  = { "FCPU_1v3_p_good",        BM_POL_FAULT },
+    [1]  = { "FCPU_3v3_reg_p_good",    BM_POL_FAULT },
     [0]  = { "FCPU_12v_p_fault",       BM_POL_FAULT },
 };
 static const bm_bit_info_t BM_BITS_MMP_ES_PG[16] = {
-    [7] = { "MMP_DTN_ES_FPGA_vddix_power_good",   BM_POL_GOOD },
-    [6] = { "MMP_DTN_ES_FPGA_vdda_1V_power_good", BM_POL_GOOD },
-    [5] = { "MMP_DTN_ES_FPGA_1v8_power_good",     BM_POL_GOOD },
-    [4] = { "MMP_DTN_ES_FPGA_2v5_power_good",     BM_POL_GOOD },
-    [3] = { "MMP_DTN_ES_FPGA_vdd_1v_power_good",  BM_POL_GOOD },
-    [2] = { "MMP_DTN_ES_FPGA_3v3_power_good",     BM_POL_GOOD },
-    [1] = { "MMP_DTN_ES_FPGA_1v3_power_good",     BM_POL_GOOD },
+    [7] = { "MMP_DTN_ES_FPGA_vddix_power_good",   BM_POL_FAULT },
+    [6] = { "MMP_DTN_ES_FPGA_vdda_1V_power_good", BM_POL_FAULT },
+    [5] = { "MMP_DTN_ES_FPGA_1v8_power_good",     BM_POL_FAULT },
+    [4] = { "MMP_DTN_ES_FPGA_2v5_power_good",     BM_POL_FAULT },
+    [3] = { "MMP_DTN_ES_FPGA_vdd_1v_power_good",  BM_POL_FAULT },
+    [2] = { "MMP_DTN_ES_FPGA_3v3_power_good",     BM_POL_FAULT },
+    [1] = { "MMP_DTN_ES_FPGA_1v3_power_good",     BM_POL_FAULT },
     [0] = { "MMP_DTN_ES_FPGA_12v_power_fault",    BM_POL_FAULT },
 };
 static const bm_bit_info_t BM_BITS_VSW_B_PG[16] = {
-    [7] = { "VMP_DTN_SW_B_FPGA_vddix_power_good",   BM_POL_GOOD },
-    [6] = { "VMP_DTN_SW_B_FPGA_vdda_1V_power_good", BM_POL_GOOD },
-    [5] = { "VMP_DTN_SW_B_FPGA_1v8_power_good",     BM_POL_GOOD },
-    [4] = { "VMP_DTN_SW_B_FPGA_2v5_power_good",     BM_POL_GOOD },
-    [3] = { "VMP_DTN_SW_B_FPGA_vdd_1v_power_good",  BM_POL_GOOD },
-    [2] = { "VMP_DTN_SW_B_FPGA_3v3_power_good",     BM_POL_GOOD },
-    [1] = { "VMP_DTN_SW_B_FPGA_1v3_power_good",     BM_POL_GOOD },
+    [7] = { "VMP_DTN_SW_B_FPGA_vddix_power_good",   BM_POL_FAULT },
+    [6] = { "VMP_DTN_SW_B_FPGA_vdda_1V_power_good", BM_POL_FAULT },
+    [5] = { "VMP_DTN_SW_B_FPGA_1v8_power_good",     BM_POL_FAULT },
+    [4] = { "VMP_DTN_SW_B_FPGA_2v5_power_good",     BM_POL_FAULT },
+    [3] = { "VMP_DTN_SW_B_FPGA_vdd_1v_power_good",  BM_POL_FAULT },
+    [2] = { "VMP_DTN_SW_B_FPGA_3v3_power_good",     BM_POL_FAULT },
+    [1] = { "VMP_DTN_SW_B_FPGA_1v3_power_good",     BM_POL_FAULT },
     [0] = { "VMP_DTN_SW_B_FPGA_12v_power_fault",    BM_POL_FAULT },
 };
 static const bm_bit_info_t BM_BITS_VSW_A_PG[16] = {
-    [7] = { "VMP_DTN_SW_A_FPGA_vddix_power_good",   BM_POL_GOOD },
-    [6] = { "VMP_DTN_SW_A_FPGA_vdda_1V_power_good", BM_POL_GOOD },
-    [5] = { "VMP_DTN_SW_A_FPGA_1v8_power_good",     BM_POL_GOOD },
-    [4] = { "VMP_DTN_SW_A_FPGA_2v5_power_good",     BM_POL_GOOD },
-    [3] = { "VMP_DTN_SW_A_FPGA_vdd_1v_power_good",  BM_POL_GOOD },
-    [2] = { "VMP_DTN_SW_A_FPGA_3v3_power_good",     BM_POL_GOOD },
-    [1] = { "VMP_DTN_SW_A_FPGA_1v3_power_good",     BM_POL_GOOD },
+    [7] = { "VMP_DTN_SW_A_FPGA_vddix_power_good",   BM_POL_FAULT },
+    [6] = { "VMP_DTN_SW_A_FPGA_vdda_1V_power_good", BM_POL_FAULT },
+    [5] = { "VMP_DTN_SW_A_FPGA_1v8_power_good",     BM_POL_FAULT },
+    [4] = { "VMP_DTN_SW_A_FPGA_2v5_power_good",     BM_POL_FAULT },
+    [3] = { "VMP_DTN_SW_A_FPGA_vdd_1v_power_good",  BM_POL_FAULT },
+    [2] = { "VMP_DTN_SW_A_FPGA_3v3_power_good",     BM_POL_FAULT },
+    [1] = { "VMP_DTN_SW_A_FPGA_1v3_power_good",     BM_POL_FAULT },
     [0] = { "VMP_DTN_SW_A_FPGA_12v_power_fault",    BM_POL_FAULT },
 };
 static const bm_bit_info_t BM_BITS_ICS1[16] = {
