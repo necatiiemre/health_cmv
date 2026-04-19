@@ -717,10 +717,11 @@ void print_vmc_pbit_report(const vmc_pbit_data_t *data, const char *device_name)
     printf(" VMP CMSW Library Ver   : %u.%u.%u\n", data->vmp_cmsw_lib_ver.major, data->vmp_cmsw_lib_ver.minor, data->vmp_cmsw_lib_ver.bugfix);
 
     printf("\n[ STORAGE & COMPONENT STATUS ]\n");
-    printf(" FLCS CPU Status        : %s\n", data->vmp_storage_and_status_st.flcs_cpu_status ? "OK" : "FAIL");
-    printf(" VS CPU Status          : %s\n", data->vmp_storage_and_status_st.vs_cpu_status ? "OK" : "FAIL");
-    printf(" eMMC Storage Status    : %s\n", data->vmp_storage_and_status_st.eMMC_storage_status ? "OK" : "FAIL");
-    printf(" MRAM Storage Status    : %s\n", data->vmp_storage_and_status_st.MRAM_storage_status ? "OK" : "FAIL");
+    // Bit konvansiyonu: 0 = PASS (fault flag temiz), 1 = FAIL (fault flag set).
+    printf(" FLCS CPU Status        : %s\n", data->vmp_storage_and_status_st.flcs_cpu_status ? "FAIL" : "PASS");
+    printf(" VS CPU Status          : %s\n", data->vmp_storage_and_status_st.vs_cpu_status ? "FAIL" : "PASS");
+    printf(" eMMC Storage Status    : %s\n", data->vmp_storage_and_status_st.eMMC_storage_status ? "FAIL" : "PASS");
+    printf(" MRAM Storage Status    : %s\n", data->vmp_storage_and_status_st.MRAM_storage_status ? "FAIL" : "PASS");
 
     printf("\n[ POLICY EXECUTION STATUS ]\n");
     printf(" Exec Status Flag       : %u\n", data->policy_steps_exec_status);
