@@ -6,9 +6,9 @@
 #include <vmc_message_types.h>
 
 // NOT: Health Monitor trafiği ayrı bir interface değil, normal DPDK data-plane
-// port'ları üzerinden taşınır. PBIT request'leri Port 2 (ör. ens1f0np0) üzerinden
-// hm_request_sender tarafından çıkar; response'lar aynı port'tan gelip VL-ID
-// aralığı kontrolüyle hm_handle_packet()'e düşer.
+// port'ları üzerinden taşınır. Tüm HM paketleri (CPU usage, CBIT, PBIT) DUT
+// tarafından otonom olarak yollanır; rx_worker fast-path'inde VL-ID aralığı
+// kontrolüyle hm_handle_packet()'e düşer.
 
 // ============================================================================
 // VL-ID tanımları

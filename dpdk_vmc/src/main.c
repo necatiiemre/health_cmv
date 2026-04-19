@@ -18,7 +18,6 @@
 #include "TxRxManager.h"
 #include "AteMode.h"         // ATE test mode selection
 #include <health_monitor.h>  // HM printer thread start/stop
-#include "hm_request_sender.h"     // PBIT request TX thread (port 2, dedicated queue)
 #include "PsuTelemetry.h"          // wire format (shared with MainSoftware)
 #include "PsuTelemetryReceiver.h"  // receiver API for MainSoftware UDP pushes
 
@@ -206,13 +205,8 @@ int main(int argc, char const *argv[])
         txrx_configs[i].port_id = port_id;
 
         // Calculate number of TX queues needed
-        // Base: NUM_TX_CORES (0 to NUM_TX_CORES-1 — tx_worker lcore'ları tarafından kullanılır).
-        // Port HM_REQUEST_TX_PORT_ID: +1 queue (queue NUM_TX_CORES) — PBIT request sender
-        // thread'i tek üretici olarak bu queue'yu kullanır, tx_worker akışı bozulmaz.
+        // Base: NUM_TX_CORES (0 to NUM_TX_CORES-1)
         uint16_t num_tx_queues = NUM_TX_CORES;
-        if (port_id == HM_REQUEST_TX_PORT_ID) {
-            num_tx_queues += 1;
-        }
 
         txrx_configs[i].nb_tx_queues = num_tx_queues;
 
@@ -306,17 +300,6 @@ int main(int argc, char const *argv[])
                (unsigned)PSU_TELEM_PORT);
     }
 
-    // Start PBIT request sender: 1 Hz VS (VLAN 98, VL-ID 15) + FLCS (VLAN 100,
-    // VL-ID 12) requests over DPDK Port 2 dedicated TX queue. Response'lar
-    // rx_worker fast-path'inde hm_handle_packet()'e düşer.
-    if (hm_request_sender_init() == 0) {
-        if (hm_request_sender_start(&force_quit) != 0) {
-            printf("Warning: HM request sender failed to start\n");
-        }
-    } else {
-        printf("Warning: HM request sender init failed\n");
-    }
-
     printf("\n=== Running (Press Ctrl+C to stop) ===\n");
     printf("  WARM-UP PHASE: First 60 seconds (stats will reset)\n\n");
 
@@ -406,9 +389,6 @@ int main(int argc, char const *argv[])
     }
 
     printf("\n=== Shutting down ===\n");
-
-    // Stop PBIT request sender (idempotent - safe if never started).
-    hm_request_sender_stop();
 
     // Stop PSU telemetry listener (idempotent - safe if never started).
     psu_telem_stop();
