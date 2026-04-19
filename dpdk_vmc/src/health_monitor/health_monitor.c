@@ -487,8 +487,15 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
         }
 
         case HEALTH_MONITOR_FLCS_PBIT_RESPONSE_VLID:    // 0x000a
+            // Uzunluk + msg_id filtresi: aynı VL-ID'ye PBIT olmayan trafik
+            // gelebiliyor (ör. 1467 B'lik PRBS paketleri); sadece spec'e
+            // uyanları slot'a yaz.
             if (len < sizeof(vmc_pbit_data_t)) {
                 __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
+            if (payload[0] != HM_PBIT_RESPONSE_MSG_ID) {
+                __atomic_add_fetch(&g_hm_rx_unknown_msg, 1, __ATOMIC_RELAXED);
                 return;
             }
             pthread_mutex_lock(&flcs_pbit_slot.lock);
@@ -502,6 +509,10 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
         case HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID:      // 0x000d
             if (len < sizeof(vmc_pbit_data_t)) {
                 __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
+            if (payload[0] != HM_PBIT_RESPONSE_MSG_ID) {
+                __atomic_add_fetch(&g_hm_rx_unknown_msg, 1, __ATOMIC_RELAXED);
                 return;
             }
             pthread_mutex_lock(&vs_pbit_slot.lock);

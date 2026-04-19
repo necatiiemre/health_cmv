@@ -37,6 +37,11 @@
 #define HM_CBIT_MSG_ID_BM_ENGINEERING 5
 #define HM_CBIT_MSG_ID_BM_FLAG        6
 
+// PBIT response paketleri (VL-ID 0x0a/0x0d) içindeki msg_id. Range check
+// (0x0009-0x0010) tek başına yetmez; aynı VL-ID'ye farklı trafik gelebildiği
+// için hm_handle_packet içinde msg_id doğrulaması yapılır.
+#define HM_PBIT_RESPONSE_MSG_ID       100
+
 static inline bool hm_is_health_monitor_vl_id(uint16_t vl_id)
 {
     return (vl_id >= HM_VL_ID_MIN && vl_id <= HM_VL_ID_MAX);
