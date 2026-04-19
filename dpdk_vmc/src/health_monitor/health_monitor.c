@@ -81,6 +81,7 @@ static volatile uint64_t g_hm_rx_total        = 0;  // hm_handle_packet çağrı
 static volatile uint64_t g_hm_rx_vs_cpu       = 0;
 static volatile uint64_t g_hm_rx_flcs_cpu     = 0;
 static volatile uint64_t g_hm_rx_cbit         = 0;  // VL-ID 11/14 toplam
+static volatile uint64_t g_hm_rx_pbit         = 0;  // VL-ID 10/13 toplam
 static volatile uint64_t g_hm_rx_unknown_vlid = 0;
 static volatile uint64_t g_hm_rx_unknown_msg  = 0;  // CBIT içinde bilinmeyen msg_id
 static volatile uint64_t g_hm_rx_short        = 0;
@@ -319,6 +320,29 @@ static void parse_dtn_sw(dtn_sw_cbit_report_t *dst, const uint8_t *payload)
     }
 }
 
+// VMC PBIT response parse — wire format 454 byte.
+static void parse_vmc_pbit(vmc_pbit_data_t *dst, const uint8_t *payload)
+{
+    memcpy(dst, payload, sizeof(*dst));
+    swap_vmp_header(&dst->header_st);
+
+    for (size_t i = 0; i < 80; i++) {
+        dst->list[i].ret_val = (int32_t)be32_to_host((uint32_t)dst->list[i].ret_val);
+    }
+
+    dst->vmc_serial_number = be32_to_host(dst->vmc_serial_number);
+
+    dst->dtn_pbit_data_st.mmp_dtn_es_fw_version.reserved_2 =
+        be32_to_host(dst->dtn_pbit_data_st.mmp_dtn_es_fw_version.reserved_2);
+    dst->dtn_pbit_data_st.vmp_dtn_sw_es_fw_version.reserved_2 =
+        be32_to_host(dst->dtn_pbit_data_st.vmp_dtn_sw_es_fw_version.reserved_2);
+    dst->dtn_pbit_data_st.vmp_dtn_sw_fw_version.reserved_2 =
+        be32_to_host(dst->dtn_pbit_data_st.vmp_dtn_sw_fw_version.reserved_2);
+
+    dst->vs_cpu_pbit = be16_to_host(dst->vs_cpu_pbit);
+    dst->flcs_cpu_pbit = be16_to_host(dst->flcs_cpu_pbit);
+}
+
 // ============================================================================
 // RX fast-path entry point
 // ============================================================================
@@ -451,7 +475,32 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
             break;
         }
 
-        // TODO: PBIT_RESPONSE (VLID 0x0a / 0x0d) aynı desenle eklenecek
+        case HEALTH_MONITOR_FLCS_PBIT_RESPONSE_VLID:
+        case HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID:
+        {
+            if (len < sizeof(vmc_pbit_data_t)) {
+                __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
+
+            if (payload[0] != HM_PBIT_MSG_ID_RESPONSE) {
+                __atomic_add_fetch(&g_hm_rx_unknown_msg, 1, __ATOMIC_RELAXED);
+                return;
+            }
+
+            const bool is_vs = (vl_id == HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID);
+            hm_pbit_slot_t *slot = is_vs ? &vs_pbit_slot : &flcs_pbit_slot;
+
+            pthread_mutex_lock(&slot->lock);
+            parse_vmc_pbit(&slot->data, payload);
+            slot->updated = true;
+            slot->update_count++;
+            pthread_mutex_unlock(&slot->lock);
+
+            __atomic_add_fetch(&g_hm_rx_pbit, 1, __ATOMIC_RELAXED);
+            break;
+        }
+
         default:
             __atomic_add_fetch(&g_hm_rx_unknown_vlid, 1, __ATOMIC_RELAXED);
             break;
@@ -497,6 +546,24 @@ static bool drain_and_print_bm_eng_slot(hm_bm_slot_t *slot, const char *device_n
 
     if (has_data) {
         print_bm_cbit_report(&local, "BM ENGINEERING CBIT REPORT", device_name);
+    }
+    return has_data;
+}
+
+static bool drain_and_print_pbit_slot(hm_pbit_slot_t *slot, const char *device_name)
+{
+    bool has_data = false;
+    vmc_pbit_data_t local;
+
+    pthread_mutex_lock(&slot->lock);
+    if (slot->updated) {
+        local = slot->data;
+        has_data = true;
+    }
+    pthread_mutex_unlock(&slot->lock);
+
+    if (has_data) {
+        print_vmc_pbit_report(&local, device_name);
     }
     return has_data;
 }
@@ -552,6 +619,8 @@ void hm_print_dashboard(void)
     bool any = false;
     any |= drain_and_print_pcs_slot(&vs_cpu_usage_slot,   "VS");
     any |= drain_and_print_pcs_slot(&flcs_cpu_usage_slot, "FLCS");
+    any |= drain_and_print_pbit_slot(&vs_pbit_slot,       "VS");
+    any |= drain_and_print_pbit_slot(&flcs_pbit_slot,     "FLCS");
 
     any |= drain_and_print_bm_eng_slot(&vs_bm_engineering_slot,   "VS");
     any |= drain_and_print_bm_eng_slot(&flcs_bm_engineering_slot, "FLCS");
@@ -570,15 +639,17 @@ void hm_print_dashboard(void)
     uint64_t vs_cnt       = __atomic_load_n(&g_hm_rx_vs_cpu,       __ATOMIC_RELAXED);
     uint64_t flcs_cnt     = __atomic_load_n(&g_hm_rx_flcs_cpu,     __ATOMIC_RELAXED);
     uint64_t cbit_cnt     = __atomic_load_n(&g_hm_rx_cbit,         __ATOMIC_RELAXED);
+    uint64_t pbit_cnt     = __atomic_load_n(&g_hm_rx_pbit,         __ATOMIC_RELAXED);
     uint64_t unknown_vlid = __atomic_load_n(&g_hm_rx_unknown_vlid, __ATOMIC_RELAXED);
     uint64_t unknown_msg  = __atomic_load_n(&g_hm_rx_unknown_msg,  __ATOMIC_RELAXED);
     uint64_t short_cnt    = __atomic_load_n(&g_hm_rx_short,        __ATOMIC_RELAXED);
     uint64_t empty_cnt    = __atomic_load_n(&g_hm_rx_empty,        __ATOMIC_RELAXED);
-    printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu cbit=%lu empty=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
+    printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu pbit=%lu cbit=%lu empty=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
            (unsigned long)tick,
            (unsigned long)total,
            (unsigned long)vs_cnt,
            (unsigned long)flcs_cnt,
+           (unsigned long)pbit_cnt,
            (unsigned long)cbit_cnt,
            (unsigned long)empty_cnt,
            (unsigned long)unknown_vlid,
