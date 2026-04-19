@@ -80,6 +80,8 @@ static hm_dtn_sw_slot_t   flcs_dtn_sw_slot         = {.lock = PTHREAD_MUTEX_INIT
 static volatile uint64_t g_hm_rx_total        = 0;  // hm_handle_packet çağrı sayısı
 static volatile uint64_t g_hm_rx_vs_cpu       = 0;
 static volatile uint64_t g_hm_rx_flcs_cpu     = 0;
+static volatile uint64_t g_hm_rx_vs_pbit      = 0;  // VL-ID 0x0d
+static volatile uint64_t g_hm_rx_flcs_pbit    = 0;  // VL-ID 0x0a
 static volatile uint64_t g_hm_rx_cbit         = 0;  // VL-ID 11/14 toplam
 static volatile uint64_t g_hm_rx_unknown_vlid = 0;
 static volatile uint64_t g_hm_rx_unknown_msg  = 0;  // CBIT içinde bilinmeyen msg_id
@@ -319,6 +321,39 @@ static void parse_dtn_sw(dtn_sw_cbit_report_t *dst, const uint8_t *payload)
     }
 }
 
+// VMC PBIT REPORT parse — wire 454 B (vmc_message_types.h:96-109).
+// Çok-byte alanların hepsi big-endian; bitfield'lar ve uint8 dizileri swap'siz.
+// Swap edilen alanlar:
+//   - header_st (msg_len uint16, timestamp uint64)
+//   - list[80].ret_val (int32 — policy_cmd uint8 swap'siz)
+//   - vmc_serial_number (uint32)
+//   - dtn_pbit_data_st içindeki üç fw_version'ın reserved_2 alanı (uint32)
+//   - vs_cpu_pbit, flcs_cpu_pbit (uint16)
+static void parse_vmc_pbit_data(vmc_pbit_data_t *dst, const uint8_t *payload)
+{
+    memcpy(dst, payload, sizeof(*dst));
+
+    swap_vmp_header(&dst->header_st);
+
+    // Policy step listesi: her elemanda sadece ret_val (int32) swap edilir.
+    for (size_t i = 0; i < sizeof(dst->list) / sizeof(dst->list[0]); i++) {
+        dst->list[i].ret_val = (int32_t)be32_to_host((uint32_t)dst->list[i].ret_val);
+    }
+
+    dst->vmc_serial_number = be32_to_host(dst->vmc_serial_number);
+
+    // dtn_pbit_data_st: üç fw_version struct'ı, her birinde 4-byte reserved_2 + 4 uint8.
+    dst->dtn_pbit_data_st.mmp_dtn_es_fw_version.reserved_2 =
+        be32_to_host(dst->dtn_pbit_data_st.mmp_dtn_es_fw_version.reserved_2);
+    dst->dtn_pbit_data_st.vmp_dtn_sw_es_fw_version.reserved_2 =
+        be32_to_host(dst->dtn_pbit_data_st.vmp_dtn_sw_es_fw_version.reserved_2);
+    dst->dtn_pbit_data_st.vmp_dtn_sw_fw_version.reserved_2 =
+        be32_to_host(dst->dtn_pbit_data_st.vmp_dtn_sw_fw_version.reserved_2);
+
+    dst->vs_cpu_pbit   = be16_to_host(dst->vs_cpu_pbit);
+    dst->flcs_cpu_pbit = be16_to_host(dst->flcs_cpu_pbit);
+}
+
 // ============================================================================
 // RX fast-path entry point
 // ============================================================================
@@ -451,7 +486,32 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
             break;
         }
 
-        // TODO: PBIT_RESPONSE (VLID 0x0a / 0x0d) aynı desenle eklenecek
+        case HEALTH_MONITOR_FLCS_PBIT_RESPONSE_VLID:    // 0x000a
+            if (len < sizeof(vmc_pbit_data_t)) {
+                __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
+            pthread_mutex_lock(&flcs_pbit_slot.lock);
+            parse_vmc_pbit_data(&flcs_pbit_slot.data, payload);
+            flcs_pbit_slot.updated = true;
+            flcs_pbit_slot.update_count++;
+            pthread_mutex_unlock(&flcs_pbit_slot.lock);
+            __atomic_add_fetch(&g_hm_rx_flcs_pbit, 1, __ATOMIC_RELAXED);
+            break;
+
+        case HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID:      // 0x000d
+            if (len < sizeof(vmc_pbit_data_t)) {
+                __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
+            pthread_mutex_lock(&vs_pbit_slot.lock);
+            parse_vmc_pbit_data(&vs_pbit_slot.data, payload);
+            vs_pbit_slot.updated = true;
+            vs_pbit_slot.update_count++;
+            pthread_mutex_unlock(&vs_pbit_slot.lock);
+            __atomic_add_fetch(&g_hm_rx_vs_pbit, 1, __ATOMIC_RELAXED);
+            break;
+
         default:
             __atomic_add_fetch(&g_hm_rx_unknown_vlid, 1, __ATOMIC_RELAXED);
             break;
@@ -479,6 +539,24 @@ static bool drain_and_print_pcs_slot(hm_pcs_slot_t *slot, const char *device_nam
 
     if (has_data) {
         print_pcs_profile_stats(&local, device_name);
+    }
+    return has_data;
+}
+
+static bool drain_and_print_pbit_slot(hm_pbit_slot_t *slot, const char *device_name)
+{
+    bool has_data = false;
+    vmc_pbit_data_t local;
+
+    pthread_mutex_lock(&slot->lock);
+    if (slot->updated) {
+        local = slot->data;
+        has_data = true;
+    }
+    pthread_mutex_unlock(&slot->lock);
+
+    if (has_data) {
+        print_vmc_pbit_report(&local, device_name);
     }
     return has_data;
 }
@@ -553,6 +631,9 @@ void hm_print_dashboard(void)
     any |= drain_and_print_pcs_slot(&vs_cpu_usage_slot,   "VS");
     any |= drain_and_print_pcs_slot(&flcs_cpu_usage_slot, "FLCS");
 
+    any |= drain_and_print_pbit_slot(&vs_pbit_slot,   "VS");
+    any |= drain_and_print_pbit_slot(&flcs_pbit_slot, "FLCS");
+
     any |= drain_and_print_bm_eng_slot(&vs_bm_engineering_slot,   "VS");
     any |= drain_and_print_bm_eng_slot(&flcs_bm_engineering_slot, "FLCS");
 
@@ -569,16 +650,20 @@ void hm_print_dashboard(void)
     uint64_t total        = __atomic_load_n(&g_hm_rx_total,        __ATOMIC_RELAXED);
     uint64_t vs_cnt       = __atomic_load_n(&g_hm_rx_vs_cpu,       __ATOMIC_RELAXED);
     uint64_t flcs_cnt     = __atomic_load_n(&g_hm_rx_flcs_cpu,     __ATOMIC_RELAXED);
+    uint64_t vs_pbit_cnt  = __atomic_load_n(&g_hm_rx_vs_pbit,      __ATOMIC_RELAXED);
+    uint64_t flcs_pbit_cnt= __atomic_load_n(&g_hm_rx_flcs_pbit,    __ATOMIC_RELAXED);
     uint64_t cbit_cnt     = __atomic_load_n(&g_hm_rx_cbit,         __ATOMIC_RELAXED);
     uint64_t unknown_vlid = __atomic_load_n(&g_hm_rx_unknown_vlid, __ATOMIC_RELAXED);
     uint64_t unknown_msg  = __atomic_load_n(&g_hm_rx_unknown_msg,  __ATOMIC_RELAXED);
     uint64_t short_cnt    = __atomic_load_n(&g_hm_rx_short,        __ATOMIC_RELAXED);
     uint64_t empty_cnt    = __atomic_load_n(&g_hm_rx_empty,        __ATOMIC_RELAXED);
-    printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu cbit=%lu empty=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
+    printf("[HM] tick=%lu total=%lu vs_cpu=%lu flcs_cpu=%lu vs_pbit=%lu flcs_pbit=%lu cbit=%lu empty=%lu unk_vlid=%lu unk_msg=%lu short=%lu printed=%d\n",
            (unsigned long)tick,
            (unsigned long)total,
            (unsigned long)vs_cnt,
            (unsigned long)flcs_cnt,
+           (unsigned long)vs_pbit_cnt,
+           (unsigned long)flcs_pbit_cnt,
            (unsigned long)cbit_cnt,
            (unsigned long)empty_cnt,
            (unsigned long)unknown_vlid,
