@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stddef.h>
 #include "PsuTelemetryReceiver.h"
 
 // ============================================================================
@@ -321,9 +322,13 @@ static void parse_dtn_sw(dtn_sw_cbit_report_t *dst, const uint8_t *payload)
 }
 
 // VMC PBIT response parse — wire format 454 byte.
-static void parse_vmc_pbit(vmc_pbit_data_t *dst, const uint8_t *payload)
+static void parse_vmc_pbit(vmc_pbit_data_t *dst, const uint8_t *payload, size_t wire_len)
 {
-    memcpy(dst, payload, sizeof(*dst));
+    memset(dst, 0, sizeof(*dst));
+    if (wire_len > sizeof(*dst)) {
+        wire_len = sizeof(*dst);
+    }
+    memcpy(dst, payload, wire_len);
     swap_vmp_header(&dst->header_st);
 
     for (size_t i = 0; i < 80; i++) {
@@ -478,7 +483,7 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
         case HEALTH_MONITOR_FLCS_PBIT_RESPONSE_VLID:
         case HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID:
         {
-            if (len < sizeof(vmc_pbit_data_t)) {
+            if (len < sizeof(vmp_cmsw_header_t)) {
                 __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
                 return;
             }
@@ -488,11 +493,19 @@ void hm_handle_packet(uint16_t vl_id, const uint8_t *payload, uint16_t len)
                 return;
             }
 
+            const uint16_t wire_len = (uint16_t)(((uint16_t)payload[1] << 8) | payload[2]);
+            if (wire_len < sizeof(vmp_cmsw_header_t) ||
+                wire_len > len ||
+                wire_len > sizeof(vmc_pbit_data_t)) {
+                __atomic_add_fetch(&g_hm_rx_short, 1, __ATOMIC_RELAXED);
+                return;
+            }
+
             const bool is_vs = (vl_id == HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID);
             hm_pbit_slot_t *slot = is_vs ? &vs_pbit_slot : &flcs_pbit_slot;
 
             pthread_mutex_lock(&slot->lock);
-            parse_vmc_pbit(&slot->data, payload);
+            parse_vmc_pbit(&slot->data, payload, wire_len);
             slot->updated = true;
             slot->update_count++;
             pthread_mutex_unlock(&slot->lock);
@@ -619,8 +632,17 @@ void hm_print_dashboard(void)
     bool any = false;
     any |= drain_and_print_pcs_slot(&vs_cpu_usage_slot,   "VS");
     any |= drain_and_print_pcs_slot(&flcs_cpu_usage_slot, "FLCS");
-    any |= drain_and_print_pbit_slot(&vs_pbit_slot,       "VS");
-    any |= drain_and_print_pbit_slot(&flcs_pbit_slot,     "FLCS");
+    bool vs_pbit_printed = drain_and_print_pbit_slot(&vs_pbit_slot, "VS");
+    bool flcs_pbit_printed = drain_and_print_pbit_slot(&flcs_pbit_slot, "FLCS");
+    any |= vs_pbit_printed || flcs_pbit_printed;
+    if (!vs_pbit_printed) {
+        printf("[HM][VS] PBIT: NO DATA (response not received yet on VLID=%u)\n",
+               (unsigned)HEALTH_MONITOR_VS_PBIT_RESPONSE_VLID);
+    }
+    if (!flcs_pbit_printed) {
+        printf("[HM][FLCS] PBIT: NO DATA (response not received yet on VLID=%u)\n",
+               (unsigned)HEALTH_MONITOR_FLCS_PBIT_RESPONSE_VLID);
+    }
 
     any |= drain_and_print_bm_eng_slot(&vs_bm_engineering_slot,   "VS");
     any |= drain_and_print_bm_eng_slot(&flcs_bm_engineering_slot, "FLCS");
