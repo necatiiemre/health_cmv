@@ -1104,6 +1104,12 @@ static void u64_hex_row(const char *name, uint64_t v)
 {
     printf("| %-47s| 0x%018lx |\n", name, (unsigned long)v);
 }
+// Hex + PASS/FAIL: değer expected ise PASS, değilse FAIL.
+static void u64_status_row(const char *name, uint64_t v, uint64_t expected_pass)
+{
+    const char *status = (v == expected_pass) ? "PASS" : "FAIL";
+    printf("| %-47s| 0x%014lx  %-4s |\n", name, (unsigned long)v, status);
+}
 static void u32_row(const char *name, uint32_t v)
 {
     printf("| %-47s| %20u |\n", name, v);
@@ -1156,7 +1162,8 @@ void print_dtn_es_cbit_report(const dtn_es_cbit_report_t *data, const char *devi
     u64_row("A664_ES_MODE",             m->A664_ES_MODE);
     u64_row("A664_ES_CONFIG_ID",        m->A664_ES_CONFIG_ID);
     u64_hex_row("A664_ES_BIT_STATUS",   m->A664_ES_BIT_STATUS);
-    u64_hex_row("A664_ES_CONFIG_STATUS",m->A664_ES_CONFIG_STATUS);
+    // Spec: A664_ES_CONFIG_STATUS beklenen PASS değeri 0x5b; farklı gelirse FAIL.
+    u64_status_row("A664_ES_CONFIG_STATUS", m->A664_ES_CONFIG_STATUS, 0x5bULL);
     u64_row("A664_ES_VENDOR_TYPE",      m->A664_ES_VENDOR_TYPE);
     u64_row("A664_BSP_VER",             m->A664_BSP_VER);
     section_footer_wide();
