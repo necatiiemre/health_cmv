@@ -251,18 +251,234 @@ typedef struct __attribute__((packed))
 
 // ============================================================================
 // 2b. BM FLAG CBIT REPORT (msg_identifier = 6)
-//
-// Wire'da 105 byte geliyor (header[11] + lru[1] + raw[93]).
-// Dokümandaki bm_engineering_cbit_report_t'den (397 B) tamamen farklı —
-// sadece aynı VL-ID'yi (11 veya 14) paylaşıyorlar. İç yapı VMC tarafından
-// açıklanana kadar raw payload olarak tutuluyor; printer hex özet basıyor.
 // ============================================================================
+typedef union __attribute__((packed))
+{
+    struct
+    {
+        uint16_t rsvd_bits                    : 2; // 14-15
+        uint16_t VSCPU_hreset_watchdog        : 1; // 13
+        uint16_t VSCPU_hreset_soft_req        : 1; // 12
+        uint16_t VSCPU_power_off_power_error  : 1; // 11
+        uint16_t VSCPU_power_off_soft_req     : 1; // 10
+        uint16_t FCPU_hreset_watchdog         : 1; // 9
+        uint16_t FCPU_hreset_soft_req         : 1; // 8
+        uint16_t FCPU_power_off_power_error   : 1; // 7
+        uint16_t FCPU_power_off_soft_req      : 1; // 6
+        uint16_t ES_power_off_power_error     : 1; // 5
+        uint16_t ES_power_off_soft_req        : 1; // 4
+        uint16_t VSW_power_off_power_error    : 1; // 3
+        uint16_t VSW_power_off_soft_req       : 1; // 2
+        uint16_t FSW_power_off_power_error    : 1; // 1
+        uint16_t FSW_power_off_soft_req       : 1; // 0
+    } bit;
+    uint16_t bit_u16;
+} bm_power_status_data_t;
+
+typedef union __attribute__((packed))
+{
+    struct
+    {
+        uint16_t rsvd_bits              : 5; // 11-15
+        uint16_t VSCPU_vtt_vref_p_good  : 1; // 10
+        uint16_t VSCPU_xvdd_p_good      : 1; // 9
+        uint16_t VSCPU_s2vdd_p_good     : 1; // 8
+        uint16_t VSCPU_s1vdd_p_good     : 1; // 7
+        uint16_t VSCPU_g1vdd_1v35_p_good: 1; // 6
+        uint16_t VSCPU_1v8_p_good       : 1; // 5
+        uint16_t VSCPU_3v3_p_good       : 1; // 4
+        uint16_t VSCPU_5v_p_good        : 1; // 3
+        uint16_t VSCPU_1v3_p_good       : 1; // 2
+        uint16_t VSCPU_3v3_reg_p_good   : 1; // 1
+        uint16_t VSCPU_12v_p_fault      : 1; // 0
+    } bit;
+    uint16_t bit_u16;
+} bm_vcpu_power_goods_t;
+
+typedef union __attribute__((packed))
+{
+    struct
+    {
+        uint16_t rsvd_bits              : 5; // 11-15
+        uint16_t FCPU_vtt_vref_p_good   : 1; // 10
+        uint16_t FCPU_xvdd_p_good       : 1; // 9
+        uint16_t FCPU_s2vdd_p_good      : 1; // 8
+        uint16_t FCPU_s1vdd_p_good      : 1; // 7
+        uint16_t FCPU_g1vdd_1v35_p_good : 1; // 6
+        uint16_t FCPU_1v8_p_good        : 1; // 5
+        uint16_t FCPU_3v3_p_good        : 1; // 4
+        uint16_t FCPU_5v_p_good         : 1; // 3
+        uint16_t FCPU_1v3_p_good        : 1; // 2
+        uint16_t FCPU_3v3_reg_p_good    : 1; // 1
+        uint16_t FCPU_12v_p_fault       : 1; // 0
+    } bit;
+    uint16_t bit_u16;
+} bm_fcpu_power_goods_t;
+
+typedef union __attribute__((packed))
+{
+    struct
+    {
+        uint16_t rsvd_bits                             : 8; // 8-15
+        uint16_t MMP_DTN_ES_FPGA_vddix_power_good      : 1; // 7
+        uint16_t MMP_DTN_ES_FPGA_vdda_1V_power_good    : 1; // 6
+        uint16_t MMP_DTN_ES_FPGA_1v8_power_good        : 1; // 5
+        uint16_t MMP_DTN_ES_FPGA_2v5_power_good        : 1; // 4
+        uint16_t MMP_DTN_ES_FPGA_vdd_1v_power_good     : 1; // 3
+        uint16_t MMP_DTN_ES_FPGA_3v3_power_good        : 1; // 2
+        uint16_t MMP_DTN_ES_FPGA_1v3_power_good        : 1; // 1
+        uint16_t MMP_DTN_ES_FPGA_12v_power_fault       : 1; // 0
+    } bit;
+    uint16_t bit_u16;
+} bm_mmp_dtn_es_fpga_power_goods_t;
+
+typedef union __attribute__((packed))
+{
+    struct
+    {
+        uint16_t rsvd_bits                             : 8; // 8-15
+        uint16_t VMP_DTN_SW_B_FPGA_vddix_power_good    : 1; // 7
+        uint16_t VMP_DTN_SW_B_FPGA_vdda_1V_power_good  : 1; // 6
+        uint16_t VMP_DTN_SW_B_FPGA_1v8_power_good      : 1; // 5
+        uint16_t VMP_DTN_SW_B_FPGA_2v5_power_good      : 1; // 4
+        uint16_t VMP_DTN_SW_B_FPGA_vdd_1v_power_good   : 1; // 3
+        uint16_t VMP_DTN_SW_B_FPGA_3v3_power_good      : 1; // 2
+        uint16_t VMP_DTN_SW_B_FPGA_1v3_power_good      : 1; // 1
+        uint16_t VMP_DTN_SW_B_FPGA_12v_power_fault     : 1; // 0
+    } bit;
+    uint16_t bit_u16;
+} bm_vmp_dtn_sw_b_fpga_power_goods_t;
+
+typedef union __attribute__((packed))
+{
+    struct
+    {
+        uint16_t rsvd_bits                             : 8; // 8-15
+        uint16_t VMP_DTN_SW_A_FPGA_vddix_power_good    : 1; // 7
+        uint16_t VMP_DTN_SW_A_FPGA_vdda_1V_power_good  : 1; // 6
+        uint16_t VMP_DTN_SW_A_FPGA_1v8_power_good      : 1; // 5
+        uint16_t VMP_DTN_SW_A_FPGA_2v5_power_good      : 1; // 4
+        uint16_t VMP_DTN_SW_A_FPGA_vdd_1v_power_good   : 1; // 3
+        uint16_t VMP_DTN_SW_A_FPGA_3v3_power_good      : 1; // 2
+        uint16_t VMP_DTN_SW_A_FPGA_1v3_power_good      : 1; // 1
+        uint16_t VMP_DTN_SW_A_FPGA_12v_power_fault     : 1; // 0
+    } bit;
+    uint16_t bit_u16;
+} bm_vmp_dtn_sw_a_fpga_power_goods_t;
+
+typedef union __attribute__((packed))
+{
+    struct
+    {
+        uint16_t rsvd_bits                  : 2; // 14-15
+        uint16_t VSCPU_core_power_not_ready : 1; // 13
+        uint16_t VSCPU_core_power_fault     : 1; // 12
+        uint16_t FCCPU_core_power_not_ready : 1; // 11
+        uint16_t FCCPU_core_power_fault     : 1; // 10
+        uint16_t VSCPU_clock_foof           : 1; // 9
+        uint16_t VSCPU_clock_loss           : 1; // 8
+        uint16_t FCCPU_clock_foof           : 1; // 7
+        uint16_t FCCPU_clock_loss           : 1; // 6
+        uint16_t DTN_ES_clock_foof          : 1; // 5
+        uint16_t DTN_ES_clock_loss          : 1; // 4
+        uint16_t DTN_VSW_clock_foof         : 1; // 3
+        uint16_t DTN_VSW_clock_loss         : 1; // 2
+        uint16_t DTN_FSW_clock_foof         : 1; // 1
+        uint16_t DTN_FSW_clock_loss         : 1; // 0
+    } bit;
+    uint16_t bit_u16;
+} ics_status_1_t;
+
+typedef union __attribute__((packed))
+{
+    struct
+    {
+        uint16_t rsvd_bits  : 11; // 5-15
+        uint16_t temp_ic_5  : 1;  // 4
+        uint16_t temp_ic_4  : 1;  // 3
+        uint16_t temp_ic_3  : 1;  // 2
+        uint16_t temp_ic_2  : 1;  // 1
+        uint16_t temp_ic_1  : 1;  // 0
+    } bit;
+    uint16_t bit_u16;
+} ics_status_2_t;
+
+typedef union __attribute__((packed))
+{
+    struct { uint16_t rsvd_bits : 15; uint16_t psm_power_primary_fault : 1; } bit;
+    uint16_t bit_u16;
+} psm_pwr_pri_flt_t;
+
+typedef union __attribute__((packed))
+{
+    struct { uint16_t rsvd_bits : 15; uint16_t psm_power_secondary_fault : 1; } bit;
+    uint16_t bit_u16;
+} psm_pwr_sec_flt_t;
+
+typedef union __attribute__((packed))
+{
+    struct { uint16_t rsvd_bits : 15; uint16_t psm_oring_ch : 1; } bit;
+    uint16_t bit_u16;
+} psm_oring_ch_t;
+
+typedef union __attribute__((packed))
+{
+    struct { uint16_t rsvd_bits : 15; uint16_t psm_hold_up_not_ok : 1; } bit;
+    uint16_t bit_u16;
+} psm_hold_up_not_ok_t;
+
 typedef struct __attribute__((packed))
 {
-    vmp_cmsw_header_t header_st;                         // Byte 0   - 10   | 11 byte
-    uint8_t           lru_id;                            // Byte 11         | 1 byte
-    uint8_t           payload[93];                       // Byte 12  - 104  | 93 byte (opaque)
-} bm_flag_cbit_report_t;                                 // TOPLAM: 105 byte
+    uint16_t red_event_flag_1; uint16_t red_event_flag_2; uint16_t red_event_flag_3;
+    uint16_t red_event_flag_4; uint16_t red_event_flag_5; uint16_t red_event_flag_6;
+    uint16_t red_event_flag_7; uint16_t red_event_flag_8; uint16_t red_event_flag_9;
+    uint16_t red_event_flag_10;
+} event_red_bitmaps_t;
+
+typedef struct __attribute__((packed))
+{
+    uint16_t orange_event_flag_1;  uint16_t orange_event_flag_2;
+    uint16_t orange_event_flag_3;  uint16_t orange_event_flag_4;
+    uint16_t orange_event_flag_5;  uint16_t orange_event_flag_6;
+    uint16_t orange_event_flag_7;  uint16_t orange_event_flag_8;
+    uint16_t orange_event_flag_9;  uint16_t orange_event_flag_10;
+    uint16_t orange_event_flag_11; uint16_t orange_event_flag_12;
+} event_orange_bitmaps_t;
+
+typedef struct __attribute__((packed))
+{
+    uint16_t yellow_event_flag_1;  uint16_t yellow_event_flag_2;
+    uint16_t yellow_event_flag_3;  uint16_t yellow_event_flag_4;
+    uint16_t yellow_event_flag_5;  uint16_t yellow_event_flag_6;
+    uint16_t yellow_event_flag_7;  uint16_t yellow_event_flag_8;
+    uint16_t yellow_event_flag_9;  uint16_t yellow_event_flag_10;
+    uint16_t yellow_event_flag_11; uint16_t yellow_event_flag_12;
+} event_yellow_bitmaps_t;
+
+typedef struct __attribute__((packed))
+{
+    vmp_cmsw_header_t header_st;   // 0..10
+    uint8_t           lru_id;      // 11
+    uint8_t           comm_status; // 12
+
+    bm_power_status_data_t              bm_power_status_st;               // 13..14
+    bm_vcpu_power_goods_t               bm_vcpu_power_goods_st;           // 15..16
+    bm_fcpu_power_goods_t               bm_fcpu_power_goods_st;           // 17..18
+    bm_mmp_dtn_es_fpga_power_goods_t    bm_mmp_dtn_es_fpga_power_goods_st;// 19..20
+    bm_vmp_dtn_sw_b_fpga_power_goods_t  bm_vmp_dtn_sw_b_fpga_power_goods_st;// 21..22
+    bm_vmp_dtn_sw_a_fpga_power_goods_t  bm_vmp_dtn_sw_a_fpga_power_goods_st;// 23..24
+    ics_status_1_t                      ics_status_1_st;                  // 25..26
+    ics_status_2_t                      ics_status_2_st;                  // 27..28
+    psm_pwr_pri_flt_t                   psm_pwr_pri_flt_st;               // 29..30
+    psm_pwr_sec_flt_t                   psm_pwr_sec_flt_st;               // 31..32
+    psm_oring_ch_t                      psm_oring_ch_st;                  // 33..34
+    psm_hold_up_not_ok_t                psm_hold_up_not_ok_st;            // 35..36
+    event_red_bitmaps_t                 event_red_bitmaps_st;             // 37..56
+    event_orange_bitmaps_t              event_orange_bitmaps_st;          // 57..80
+    event_yellow_bitmaps_t              event_yellow_bitmaps_st;          // 81..104
+} bm_flag_cbit_report_t; // TOPLAM: 105 byte
+
+_Static_assert(sizeof(bm_flag_cbit_report_t) == 105, "bm_flag_cbit_report_t size mismatch");
 
 // ============================================================================
 // ============================================================================

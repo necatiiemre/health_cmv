@@ -359,6 +359,11 @@ int main(int argc, char const *argv[])
         // Health monitor dashboard — stats tablosundan hemen sonra, sıralı akış
         hm_print_dashboard();
 
+        // PSU telemetry table (MainSoftware -> dpdk_vmc UDP stream).
+        // Printed from main loop so visibility does not depend on
+        // health-monitor internal formatting details.
+        psu_telem_print_table();
+
         fflush(stdout);  // Ensure output is visible on remote/main computer
 
         // Update prev_* for the NEXT second: (cumulative HW byte counters)

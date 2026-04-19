@@ -183,11 +183,18 @@ static void parse_bm_engineering(bm_engineering_cbit_report_t *dst, const uint8_
     (void)bswap_float_array; // helper leri ilerideki yeni parse'larda kullanacağız
 }
 
-// BM FLAG (105 B) parse — header + lru + 93 B opaque payload.
+// BM FLAG (105 B) parse — header + semantic 16-bit flag fields.
 static void parse_bm_flag(bm_flag_cbit_report_t *dst, const uint8_t *payload)
 {
     memcpy(dst, payload, sizeof(*dst));
     swap_vmp_header(&dst->header_st);
+
+    // Header(11) + lru(1) + comm_status(1) sonrası kalan tüm alanlar uint16_t.
+    uint16_t *w = (uint16_t *)((uint8_t *)dst + 13);
+    size_t n = (sizeof(*dst) - 13) / sizeof(uint16_t);
+    for (size_t i = 0; i < n; i++) {
+        w[i] = be16_to_host(w[i]);
+    }
 }
 
 // DTN ES parse — wire 352 B (HW_VCC_INT çıkarıldı).
@@ -788,85 +795,100 @@ void print_bm_cbit_report(const bm_engineering_cbit_report_t *data, const char *
     printf("========================================================================================\n");
 }
 
-// 2b. BM FLAG — 105 B. Her flag byte'ı BM Engineering'deki ilgili float
-// alanının durum bayrağı. İsimler BM Engineering struct'ından birebir.
-// BM Engineering toplam 96 float, BM Flag payload 93 byte → VMC Board
-// kısmı ilk 4 alanla sınırlandırıldı (spec gelince tamamlanacak).
-
-static const char * const BM_FLAG_NAMES_VS_CPU[22] = {
-    "VSCPU_12V_current",           "VSCPU_core_imon",
-    "VSCPU_3v3_rail_input_current","VSCPU_G1VDD_input_current",
-    "VSCPU_XVDD_input_current",    "VSCPU_SVDD_input_current",
-    "VSCPU_G1VDD_1v35_rail_voltage","VSCPU_BM_ADC_3V_1",
-    "VSCPU_1v8_rail_voltage",      "VSCPU_VCORE_rail_voltage",
-    "VSCPU_S1VDD_rail_voltage",    "VSCPU_S2VDD_rail_voltage",
-    "VSCPU_X1VDD_rail_voltage",    "VSCPU_X2VDD_rail_voltage",
-    "VSCPU_12V_main_voltage",      "VSCPU_BM_ADC_3V_2",
-    "VSCPU_1v8_rail_input_current","VSCPU_core_local_temperature",
-    "VSCPU_core_remote_temperature","VSCPU_RAM_temperature",
-    "VSCPU_FLASH_temperature",     "VSCPU_power_IC_temperature",
-};
-static const char * const BM_FLAG_NAMES_FLCS_CPU[22] = {
-    "FCCPU_12V_current",           "FCCPU_core_imon",
-    "FCCPU_3v3_rail_input_current","FCCPU_G1VDD_input_current",
-    "FCCPU_XVDD_input_current",    "FCCPU_SVDD_input_current",
-    "FCCPU_G1VDD_1v35_rail_voltage","FCCPU_BM_ADC_3V_1",
-    "FCCPU_1v8_rail_voltage",      "FCCPU_VCORE_rail_voltage",
-    "FCCPU_S1VDD_rail_voltage",    "FCCPU_S2VDD_rail_voltage",
-    "FCCPU_X1VDD_rail_voltage",    "FCCPU_X2VDD_rail_voltage",
-    "FCCPU_12V_main_voltage",      "FCCPU_BM_ADC_3V_2",
-    "FCCPU_core_local_temperature","FCCPU_core_remote_temperature",
-    "FCCPU_RAM_temperature",       "FCCPU_FLASH_temperature",
-    "FCCPU_1v8_input_current",     "FCCPU_power_IC_temperature",
-};
-static const char * const BM_FLAG_NAMES_DTN_ES[15] = {
-    "DTN_ES_VDD_input_current",    "DTN_ES_3v3_rail_input_current",
-    "DTN_ES_FO_RX_imon_r",         "DTN_ES_1v8_rail_input_current",
-    "DTN_ES_1v3_rail_input_current","DTN_ES_12V_main_current",
-    "DTN_ES_BM_3V_1",              "DTN_ES_1V_VDD_rail_voltage",
-    "DTN_ES_2v5_rail_voltage",     "DTN_ES_1v8_rail_voltage",
-    "DTN_ES_1V_VDDA_rail_voltage", "DTN_ES_3v3_VDDIX_rail_voltage",
-    "DTN_ES_2v5_rail_input_current","DTN_ES_12V_main_voltage",
-    "DTN_ES_BM_3V_2",
-};
-static const char * const BM_FLAG_NAMES_DTN_VSW[15] = {
-    "DTN_VSW_VDD_input_current",   "DTN_VSW_3v3_rail_input_current",
-    "DTN_VSW_FO_V_RX_imon_r",      "DTN_VSW_1v8_rail_input_current",
-    "DTN_VSW_1v3_rail_input_current","DTN_VSW_12V_main_current",
-    "DTN_VSW_BM_ADC_3V_1",         "DTN_VSW_1V_VDD_rail_voltage",
-    "DTN_VSW_2v5_rail_voltage",    "DTN_VSW_1v8_rail_voltage",
-    "DTN_VSW_1V_VDDA_rail_voltage","DTN_VSW_2v5_rail_input_current",
-    "DTN_VSW_12V_main_voltage",    "DTN_VSW_FO_VF_RX_imon_r",
-    "DTN_VSW_3v3_VDDIX_voltage",
-};
-static const char * const BM_FLAG_NAMES_DTN_FSW[15] = {
-    "DTN_FSW_VDD_input_current",   "DTN_FSW_3v3_rail_input_current",
-    "DTN_FSW_FO_F_RX_imon_r",      "DTN_FSW_1v8_rail_input_current",
-    "DTN_FSW_1v3_rail_input_current","DTN_FSW_12V_main_current",
-    "DTN_FSW_BM_ADC_3V_1",         "DTN_FSW_1V_VDD_rail_voltage",
-    "DTN_FSW_2v5_rail_voltage",    "DTN_FSW_1v8_rail_voltage",
-    "DTN_FSW_1V_VDDA_rail_voltage","DTN_FSW_3v3_VDDIX_rail_voltage",
-    "DTN_FSW_2v5_rail_input_current","DTN_FSW_12V_main_voltage",
-    "DTN_FSW_BM_ADC_3V_2",
-};
-// VMC Board'un ilk 4 alanı (flag payload'unda sadece 4 byte var).
-static const char * const BM_FLAG_NAMES_VMC_BOARD[4] = {
-    "PSM_PWR_PRI_VOLS", "PSM_PWR_SEC_VOLS",
-    "PSM_INPUT_CURS",   "PSM_TEMP",
-};
-
-static void print_named_flag_section(const char *title,
-                                     const char * const *names,
-                                     const uint8_t *bytes,
-                                     size_t count, size_t base)
+// 2b. BM FLAG — raw bitfield print helpers
+// names[bit_index] (0..15). NULL => reserved.
+static void print_bitfield_rows(const char *title, uint16_t v, const char *names[16])
 {
-    printf("\n[ %s ]  (%zu bytes, payload offset %zu..%zu)\n",
-           title, count, base, base + count - 1);
-    printf(" %-34s | FLAG | OFF\n", "FIELD");
-    printf("------------------------------------|------|------\n");
-    for (size_t i = 0; i < count; i++) {
-        printf(" %-34s | 0x%02x | +%zu\n", names[i], bytes[i], base + i);
+
+    printf("\n+------------------------------------------------+------------+\n");
+    printf("| %-47s| 0x%04X     |\n", title, v);
+    printf("+------------------------------------------------+------------+\n");
+    printf("| %-47s| %-10s |\n", "BIT NAME", "STATE");
+    printf("+------------------------------------------------+------------+\n");
+    for (int bit = 15; bit >= 0; --bit) {
+        const char *name = names[bit] ? names[bit] : "reserved";
+        bool is_set = (v & (1u << bit)) != 0;
+        printf("| b%-2d %-43s| %-10s |\n",
+               bit, name, is_set ? "SET" : "CLEAR");
     }
+    printf("+------------------------------------------------+------------+\n");
+}
+
+static const char *BM_BITS_POWER_STATUS[16] = {
+    [15] = "reserved", [14] = "reserved",
+    [13] = "VSCPU_hreset_watchdog", [12] = "VSCPU_hreset_soft_req",
+    [11] = "VSCPU_power_off_power_error", [10] = "VSCPU_power_off_soft_req",
+    [9]  = "FCPU_hreset_watchdog", [8] = "FCPU_hreset_soft_req",
+    [7]  = "FCPU_power_off_power_error", [6] = "FCPU_power_off_soft_req",
+    [5]  = "ES_power_off_power_error", [4] = "ES_power_off_soft_req",
+    [3]  = "VSW_power_off_power_error", [2] = "VSW_power_off_soft_req",
+    [1]  = "FSW_power_off_power_error", [0] = "FSW_power_off_soft_req",
+};
+static const char *BM_BITS_VCPU_PG[16] = {
+    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved", [11] = "reserved",
+    [10] = "VSCPU_vtt_vref_p_good", [9] = "VSCPU_xvdd_p_good", [8] = "VSCPU_s2vdd_p_good",
+    [7] = "VSCPU_s1vdd_p_good", [6] = "VSCPU_g1vdd_1v35_p_good", [5] = "VSCPU_1v8_p_good",
+    [4] = "VSCPU_3v3_p_good", [3] = "VSCPU_5v_p_good", [2] = "VSCPU_1v3_p_good",
+    [1] = "VSCPU_3v3_reg_p_good", [0] = "VSCPU_12v_p_fault",
+};
+static const char *BM_BITS_FCPU_PG[16] = {
+    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved", [11] = "reserved",
+    [10] = "FCPU_vtt_vref_p_good", [9] = "FCPU_xvdd_p_good", [8] = "FCPU_s2vdd_p_good",
+    [7] = "FCPU_s1vdd_p_good", [6] = "FCPU_g1vdd_1v35_p_good", [5] = "FCPU_1v8_p_good",
+    [4] = "FCPU_3v3_p_good", [3] = "FCPU_5v_p_good", [2] = "FCPU_1v3_p_good",
+    [1] = "FCPU_3v3_reg_p_good", [0] = "FCPU_12v_p_fault",
+};
+static const char *BM_BITS_MMP_ES_PG[16] = {
+    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved",
+    [11] = "reserved", [10] = "reserved", [9] = "reserved", [8] = "reserved",
+    [7] = "MMP_DTN_ES_FPGA_vddix_power_good", [6] = "MMP_DTN_ES_FPGA_vdda_1V_power_good",
+    [5] = "MMP_DTN_ES_FPGA_1v8_power_good", [4] = "MMP_DTN_ES_FPGA_2v5_power_good",
+    [3] = "MMP_DTN_ES_FPGA_vdd_1v_power_good", [2] = "MMP_DTN_ES_FPGA_3v3_power_good",
+    [1] = "MMP_DTN_ES_FPGA_1v3_power_good", [0] = "MMP_DTN_ES_FPGA_12v_power_fault",
+};
+static const char *BM_BITS_VSW_B_PG[16] = {
+    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved",
+    [11] = "reserved", [10] = "reserved", [9] = "reserved", [8] = "reserved",
+    [7] = "VMP_DTN_SW_B_FPGA_vddix_power_good", [6] = "VMP_DTN_SW_B_FPGA_vdda_1V_power_good",
+    [5] = "VMP_DTN_SW_B_FPGA_1v8_power_good", [4] = "VMP_DTN_SW_B_FPGA_2v5_power_good",
+    [3] = "VMP_DTN_SW_B_FPGA_vdd_1v_power_good", [2] = "VMP_DTN_SW_B_FPGA_3v3_power_good",
+    [1] = "VMP_DTN_SW_B_FPGA_1v3_power_good", [0] = "VMP_DTN_SW_B_FPGA_12v_power_fault",
+};
+static const char *BM_BITS_VSW_A_PG[16] = {
+    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved",
+    [11] = "reserved", [10] = "reserved", [9] = "reserved", [8] = "reserved",
+    [7] = "VMP_DTN_SW_A_FPGA_vddix_power_good", [6] = "VMP_DTN_SW_A_FPGA_vdda_1V_power_good",
+    [5] = "VMP_DTN_SW_A_FPGA_1v8_power_good", [4] = "VMP_DTN_SW_A_FPGA_2v5_power_good",
+    [3] = "VMP_DTN_SW_A_FPGA_vdd_1v_power_good", [2] = "VMP_DTN_SW_A_FPGA_3v3_power_good",
+    [1] = "VMP_DTN_SW_A_FPGA_1v3_power_good", [0] = "VMP_DTN_SW_A_FPGA_12v_power_fault",
+};
+static const char *BM_BITS_ICS1[16] = {
+    [15] = "reserved", [14] = "reserved",
+    [13] = "VSCPU_core_power_not_ready", [12] = "VSCPU_core_power_fault",
+    [11] = "FCCPU_core_power_not_ready", [10] = "FCCPU_core_power_fault",
+    [9] = "VSCPU_clock_foof", [8] = "VSCPU_clock_loss",
+    [7] = "FCCPU_clock_foof", [6] = "FCCPU_clock_loss",
+    [5] = "DTN_ES_clock_foof", [4] = "DTN_ES_clock_loss",
+    [3] = "DTN_VSW_clock_foof", [2] = "DTN_VSW_clock_loss",
+    [1] = "DTN_FSW_clock_foof", [0] = "DTN_FSW_clock_loss",
+};
+static const char *BM_BITS_ICS2[16] = {
+    [15] = "reserved", [14] = "reserved", [13] = "reserved", [12] = "reserved", [11] = "reserved",
+    [10] = "reserved", [9] = "reserved", [8] = "reserved", [7] = "reserved", [6] = "reserved", [5] = "reserved",
+    [4] = "temp_ic_5", [3] = "temp_ic_4", [2] = "temp_ic_3", [1] = "temp_ic_2", [0] = "temp_ic_1",
+};
+
+static void print_event_bitmap_table(const char *title, const uint16_t *arr, size_t count)
+{
+    char name[32];
+    printf("\n+------------------------------------------------+------------+\n");
+    printf("| %-47s| %-10s |\n", title, "VALUE");
+    printf("+------------------------------------------------+------------+\n");
+    for (size_t i = 0; i < count; i++) {
+        snprintf(name, sizeof(name), "event_flag_%zu", i + 1);
+        printf("| %-47s| 0x%04X     |\n", name, arr[i]);
+    }
+    printf("+------------------------------------------------+------------+\n");
 }
 
 void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *device_name)
@@ -884,14 +906,41 @@ void print_bm_flag_cbit_report(const bm_flag_cbit_report_t *data, const char *de
     printf(" Timestamp    : %-18lu | LRU ID       : %u\n",
            (unsigned long)data->header_st.timestamp, data->lru_id);
 
-    const uint8_t *p = data->payload;
-    // VS_CPU(22) | FLCS_CPU(22) | DTN_ES(15) | DTN_VSW(15) | DTN_FSW(15) | VMC_BOARD(4) = 93
-    print_named_flag_section("VS CPU FLAGS",    BM_FLAG_NAMES_VS_CPU,    p +  0, 22,  0);
-    print_named_flag_section("FLCS CPU FLAGS",  BM_FLAG_NAMES_FLCS_CPU,  p + 22, 22, 22);
-    print_named_flag_section("DTN ES FLAGS",    BM_FLAG_NAMES_DTN_ES,    p + 44, 15, 44);
-    print_named_flag_section("DTN VSW FLAGS",   BM_FLAG_NAMES_DTN_VSW,   p + 59, 15, 59);
-    print_named_flag_section("DTN FSW FLAGS",   BM_FLAG_NAMES_DTN_FSW,   p + 74, 15, 74);
-    print_named_flag_section("VMC BOARD FLAGS", BM_FLAG_NAMES_VMC_BOARD, p + 89,  4, 89);
+    printf(" Comm Status  : %u\n", data->comm_status);
+
+    print_bitfield_rows("BM POWER STATUS", data->bm_power_status_st.bit_u16, BM_BITS_POWER_STATUS);
+    print_bitfield_rows("BM VCPU POWER GOODS", data->bm_vcpu_power_goods_st.bit_u16, BM_BITS_VCPU_PG);
+    print_bitfield_rows("BM FCPU POWER GOODS", data->bm_fcpu_power_goods_st.bit_u16, BM_BITS_FCPU_PG);
+    print_bitfield_rows("BM MMP DTN ES FPGA POWER GOODS", data->bm_mmp_dtn_es_fpga_power_goods_st.bit_u16, BM_BITS_MMP_ES_PG);
+    print_bitfield_rows("BM VMP DTN SW B FPGA POWER GOODS", data->bm_vmp_dtn_sw_b_fpga_power_goods_st.bit_u16, BM_BITS_VSW_B_PG);
+    print_bitfield_rows("BM VMP DTN SW A FPGA POWER GOODS", data->bm_vmp_dtn_sw_a_fpga_power_goods_st.bit_u16, BM_BITS_VSW_A_PG);
+    print_bitfield_rows("ICS STATUS 1", data->ics_status_1_st.bit_u16, BM_BITS_ICS1);
+    print_bitfield_rows("ICS STATUS 2", data->ics_status_2_st.bit_u16, BM_BITS_ICS2);
+
+    print_bitfield_rows("PSM POWER PRIMARY FAULT", data->psm_pwr_pri_flt_st.bit_u16, (const char *[16]){
+        [15]="reserved",[14]="reserved",[13]="reserved",[12]="reserved",[11]="reserved",[10]="reserved",[9]="reserved",[8]="reserved",
+        [7]="reserved",[6]="reserved",[5]="reserved",[4]="reserved",[3]="reserved",[2]="reserved",[1]="reserved",[0]="psm_power_primary_fault"
+    });
+    print_bitfield_rows("PSM POWER SECONDARY FAULT", data->psm_pwr_sec_flt_st.bit_u16, (const char *[16]){
+        [15]="reserved",[14]="reserved",[13]="reserved",[12]="reserved",[11]="reserved",[10]="reserved",[9]="reserved",[8]="reserved",
+        [7]="reserved",[6]="reserved",[5]="reserved",[4]="reserved",[3]="reserved",[2]="reserved",[1]="reserved",[0]="psm_power_secondary_fault"
+    });
+    print_bitfield_rows("PSM ORING CH", data->psm_oring_ch_st.bit_u16, (const char *[16]){
+        [15]="reserved",[14]="reserved",[13]="reserved",[12]="reserved",[11]="reserved",[10]="reserved",[9]="reserved",[8]="reserved",
+        [7]="reserved",[6]="reserved",[5]="reserved",[4]="reserved",[3]="reserved",[2]="reserved",[1]="reserved",[0]="psm_oring_ch"
+    });
+    print_bitfield_rows("PSM HOLD UP NOT OK", data->psm_hold_up_not_ok_st.bit_u16, (const char *[16]){
+        [15]="reserved",[14]="reserved",[13]="reserved",[12]="reserved",[11]="reserved",[10]="reserved",[9]="reserved",[8]="reserved",
+        [7]="reserved",[6]="reserved",[5]="reserved",[4]="reserved",[3]="reserved",[2]="reserved",[1]="reserved",[0]="psm_hold_up_not_ok"
+    });
+
+    uint16_t red[10], orange[12], yellow[12];
+    memcpy(red, &data->event_red_bitmaps_st, sizeof(red));
+    memcpy(orange, &data->event_orange_bitmaps_st, sizeof(orange));
+    memcpy(yellow, &data->event_yellow_bitmaps_st, sizeof(yellow));
+    print_event_bitmap_table("EVENT RED BITMAPS", red, 10);
+    print_event_bitmap_table("EVENT ORANGE BITMAPS", orange, 12);
+    print_event_bitmap_table("EVENT YELLOW BITMAPS", yellow, 12);
 
     printf("========================================================================================\n");
 }
