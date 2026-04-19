@@ -1191,8 +1191,9 @@ void print_dtn_es_cbit_report(const dtn_es_cbit_report_t *data, const char *devi
     section_footer_wide();
 
     section_header_wide("PORT STATUS");
-    u64_hex_row("A664_ES_PORT_A_STATUS", m->A664_ES_PORT_A_STATUS);
-    u64_hex_row("A664_ES_PORT_B_STATUS", m->A664_ES_PORT_B_STATUS);
+    // Spec: PORT_A/PORT_B status beklenen PASS değeri 0x0; farklı gelirse FAIL.
+    u64_status_row("A664_ES_PORT_A_STATUS", m->A664_ES_PORT_A_STATUS, 0x0ULL);
+    u64_status_row("A664_ES_PORT_B_STATUS", m->A664_ES_PORT_B_STATUS, 0x0ULL);
     section_footer_wide();
 
     section_header_wide("TX COUNTERS");
